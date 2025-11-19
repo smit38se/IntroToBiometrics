@@ -1,0 +1,552 @@
+---
+title: "BIO456/BIO556 Lab Week 02"
+author: "Lee Brown"
+date: "1 Sept 2025"
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+mainfont: Arial
+---
+
+Welcome to week 2's lab! Today we are going to learn all about TIDY (and tidying) DATA...
+
+Overview:
+
+1. Last week's lab exercise
+
+2. tibbles vs dataframes
+
+3. types of data
+
+4. tidy data are...
+
+5. pivot_*() 
+
+6. *_join() 
+
+7. select() and filter()
+
+8. separate() and unite()
+
+Load in our packages
+```{r libraries, message=FALSE}
+library(tidyverse)
+library(ggtext) # just for italicizing on figure axes; YOU WILL NEED TO INSTALL THIS!!!! Remember, use the install.packages() function and put the package name in quotation marks.
+
+# Only run the lines of code below if you did not install the tidyverse last lab but instead installed the packages individually
+# library(readr)
+# library(dplyr)
+# library(tidyr)
+# library(ggplot2)
+```
+
+Now let's go over the answer to the lab assignment from last week... This assignment involves a little bit of puzzle solving -- breaking the code down & putting it back together.
+
+### Last week's lab (review: Lab 1) ###
+
+Reminder of the example leafhopper assigment in the lab
+```{r review lab 1 example assignment}
+# Sometimes we can be lazy & condense our code by stringing multiple steps together with pipes. I don't always recommend this, as breaking it down into single lines of code allows you to troubleshoot errors more easily, but here we go...
+
+### Read the leafhoppers data into R ### 
+leafhoppers <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week1/leafhoppers.csv") %>%               # read in .csv file; these are NOT tidy data (we'll come back to "tidy")
+  gather(key = "plant_ID", value = "no_leafhoppers") %>%     # turn five columns into two
+  group_by(plant_ID) %>%                                     # what happens when you delete this line?
+  mutate(observation = row_number(),                         # give EACH PLANT a unique observation number based on the number of rows in the dataset
+         cumulative = cumsum(no_leafhoppers),                # cumulative sum of leafhopper observations for each plant
+         density = cumulative / observation)                 # estimated probability of seeing a leafhopper (event) on a leaf (i.e., trial)
+
+### Plot the leafhopper data ###
+ggplot(data = leafhoppers, aes(x = observation, y = density, color = plant_ID)) + geom_line() + 
+  labs(x = "Sampling effort (leaves)", y = "Estimated probability") + theme_classic()
+```
+
+Actual lab assignment with firefly data
+```{r review lab 1 Lab Assignment}
+### Read in the fireflies data ###
+# we can be extra lazy by just copy-pasting code and replacing the things unique to the data set
+fireflies <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week1/fireflies.csv") %>%                   # read in .csv file
+  #gather(key = "treatment", value = "no_carolinus") %>%    # ??? do we need to do this this time?
+  group_by(treatment) %>%                                    # what happens when you delete this line?
+  mutate(observation = row_number(),                         # number the rows for each treatment
+         cumulative = cumsum(no_carolinus),                  # make sure you have the right column name here
+         density = cumulative / observation)                 # otherwise we can copy this section from above
+
+### Plot the fireflies data ###
+ggplot(data = fireflies, aes(x = observation, y = density, color = treatment)) + geom_line() + 
+  labs(x = "Sampling effort (minutes)", y = "Estimated probability") + theme_classic()
+
+# We made a perfectly serviceable plot & got credit for the lab.
+# But... maybe we want our plot to look fancier, with better colors?
+
+ggplot(data = fireflies, aes(x = observation, y = density, color = treatment)) + geom_line() + 
+  labs(x = "Sampling effort (minutes)", y = "Estimated probability") + theme_classic() + 
+  scale_color_manual(name = "Light treatments",                      # legend title
+                     labels = c("dark","red","amber","blue"),        # legend labels -- USE WITH CAUTION!!!
+                     values = c("gray25","red","gold","dodgerblue")) # custom colors -- SERIOUSLY!!!
+
+levels(as.factor(fireflies$treatment))
+
+# We will learn how to "reorder (relevel) factor levels" later today
+# For now, let's just rename/recolor things in alphabetical order
+ggplot(data = fireflies, aes(x = observation, y = density, color = treatment)) + geom_line() + 
+  scale_color_manual(name = "Light treatments", 
+                     labels = c("amber","blue","dark","red"),
+                     values = c("gold","dodgerblue","gray25","red")) + 
+  labs(x = "Sampling effort (minutes)", y = "Estimated probability of *P. carolinus* activity") + 
+  theme_classic() + theme(axis.title.y = element_markdown()) # requires the "ggtext" package -- DID YOU INSTALL IT? DID YOU REMEMBER TO LOAD THE LIBRARY?
+```
+
+...*This* is Markdown, by the way. The formatting doesn't really show up in the R Markdown .Rmd file itself but if you "Knit" it to some other format the formatting does show up will. You may or may not be able to knit your .Rmd file right now -- it usually requires some troubleshooting, and *you can't have any errors in your code* when run from top to bottom -- but for the moment just know that you will be able to, someday, and that is one of the great benefits of the R Markdown!
+
+### Today's lab ###
+
+Let's briefly review tibbles and dataframes
+```{r tibbles and dataframes - builtin} 
+mtcars  # 'mtcars' is a built-in data set (search it in the Help tab to learn more!)
+
+# view the above dataframe as a tibble (here for comparison purposes)
+as_tibble(mtcars) 
+
+# What is missing from the above data when presented as a tibble? What doyou think happened?
+
+# HINT: Try out the row.names() function
+```
+
+```{r tibbles and dataframes - create your own} 
+my_dframe <- data.frame(nums = 1:6, # create your own dataframe by naming & filling columns...
+     grads = c("Chelsea","Ian","Eriberto","Carly","Helen","Kylie")) # 'grads' is the new column name
+                        
+my_tibble <- tibble(nums = 1:6, 
+                    grads = c("Chelsea","Ian","Eriberto","Carly","Helen","Kylie"))
+
+
+#ALWAYS LOOK AT THE OBJECTS YOU HAVE CREATED AND MAKE SURE YOU HAVE WHAT YOU THINK YOU SHOULD HAVE BASED ON YOUR CODE ABOVE!!
+
+# Highlight both lines of code below to look at the dataframe and tibbles side by side
+my_dframe 
+my_tibble
+
+# Look only at the column called 'grads'
+my_dframe$grads 
+my_tibble$grads
+
+#Below is another way to look at the column called 'grads' (we are asking R to show us all rows in the the second column)
+my_dframe[,2] 
+my_tibble[,2] 
+
+#How is the dataframe vs tibble output different with the above way of pulling up the second column of data?
+
+# In the output of the two lines of code below, you can see how dataframes do "fuzzy-matching to column names which is sometimes good but can also be bad if they match the wrong column!
+my_dframe$g 
+my_tibble$g # tibbles do not
+
+my_dframe[,'grads'] #yet another way of looking at the column called 'grads'!
+my_tibble[,'grads']
+```
+
+Now, what might we add to our tibbles? Data, of course!
+In R, data come in five main types:
+```{r types of data}
+#NOTE: If you put the line of code in which you name a new object in parentheses, the contents of the new object are shared to the console
+
+(type0 <- c(3, 75, 6, 0, -1, 100))
+class(type0)
+mode(type0)
+
+# round numbers (integers or 'int') forced with L:
+(type1 <- c(3L, 75L, 6L, 0L, -1L, 100L))  #notice that the contents of this object appear exactly the same as above, type0, but are they the same class() and mode()?
+class(type1)
+mode(type1)
+
+# non-round numeric (doubles or 'dbl')
+(type2 <- c(-21, 3e8, 0.00, 12.50, -3.333, 60))
+class(type2)
+mode(type2)
+
+# words and phrases (characters or 'chr')
+(type3 <- c("fuchsia", "one", "two", "Zoom University",   
+           "Yoshi committed tax fraud", "IMDEAD"))
+class(type3)
+mode(type3)
+
+# categories of things (factor or 'fctr')
+(type4 <- as.factor(type3))   
+class(type4)
+mode(type4) # Whaaaaaaaaaaaaaaa... ??
+
+# true/false binary (logicals or 'lgl')
+(type5 <- c(T,F,T,F,F,T))    
+class(type5)
+mode(type5)
+
+# Create a new tibble below that combines the five vectors above; we do not need to assign column names because the vectors have names already
+types <- tibble(type1, type2, type3, type4, type5)       
+
+# Remember to always look at the object (tibble) you just made! Does it look like what you expected?
+types
+
+#What happens if we convert each column of data into a "numeric" format?
+types_numeric <- tibble(t1 = as.numeric(types$type1), # turn non-numbers into numbers with this
+                        t2 = as.numeric(types$type2), # note the '.' separator rather than '_'
+                        t3 = as.numeric(types$type3), # BTW here I am losing data -- Why???
+                        t4 = as.numeric(types$type4), #
+                        t5 = as.numeric(types$type5)) # 
+
+types
+types_numeric
+
+# Compare the output of the summary() and str() functions. Both are useful!!
+summary(types_numeric)
+summary(types)
+
+str(types_numeric)
+str(types)
+
+# The third and fourth columns in 'types' contained the same data. So, 
+
+# 1) Why the data in column three disappear in the 'types_numeric' tibble?
+# 2) Why does the ouput of str(types) differ from the output of str(types_numeric)?
+# 3) Why do the output of both 'summary(types)' and 'str(types) differ between the third and fourth columns?
+```
+
+Let's play with factors a bit more...
+```{r factors}
+str(type4) # Factor w/ 6 levels "fuchsia","IMDEAD",..: 3 4 1 6 5 2
+
+type4      # Note the Levels: fuchsia IMDEAD one two Yoshi committed tax fraud Zoom University (ALPHABETICAL)
+
+#See also:
+levels(type4)
+
+# Reorder factor levels; be sure to write the exact factor names in the desired order:
+type4 %>%  
+  factor(levels = c("one", "two", "IMDEAD", "fuchsia", "Zoom University", "Yoshi committed tax fraud"))
+
+#If you want to save the new order, you have to create a new object, or write over the existing one
+levels(type4) #still the original order
+
+# To reorder factor levels, write the exact factor names in the desired order
+type5 <- type4 %>%  
+  factor(levels = c("one", "two", "IMDEAD", "fuchsia", "Zoom University", "Yoshi committed tax fraud"))
+
+levels(type5) #That's better!
+
+
+### Referring back to the plot we made above: If you want to change the order and colors of plot labels, you can also factor within the ggplot aes() function###
+ggplot(data = fireflies, aes(x = observation, 
+                             y = density, 
+                             color = treatment %>% factor(levels = c("D","R","A","B")))) + # we can reorder here
+  geom_line() + 
+  scale_color_manual(name = "Light treatments", 
+                     labels = c("dark","red","amber","blue"),
+                     values = c("gray25","red","gold","dodgerblue")) + 
+  labs(x = "Sampling effort (minutes)", y = "Estimated probability of *P. carolinus* activity") + 
+  theme_classic() + theme(axis.title.y = element_markdown()) # requires the "ggtext" package
+```
+
+Moving on...
+*What* exactly is tidy data? 
+The key idea is that each row corresponds to a *single data point*!
+- Every column is a UNIQUE variable.
+- Every row is an observation.
+- Every cell is a single value.
+
+```{r tidy data}
+mtcars # motor trend car road tests; tidy == Yes
+
+diamonds # data on 53,940 different diamonds; tidy == Yes
+
+read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week1/leafhoppers.csv") # TIDY == NO!
+```
+
+**How do we tidy our data and make it easier to deal with?**
+With a few very useful tidyverse functions. First, the pivot_*() family of functions:
+pivot_wider() and pivot_longer()
+
+Previous functions were spread() and gather() -- these still work but are no longer updated
+```{r pivot_*()}
+# We are going to use the pivot_*() family of functions to tidy (and untidy) our data -- updated versions of gather() and spread()
+
+# First, create a new tibble
+sneks <- tibble(name = rep(c("Spaghetto", "Cervantes"), each = 2), # put each name twice in a row
+                diet = rep(c("mice", "rats"), times = 2), # repeat these two names in sequence a total of three times
+                no_eaten = c(9, 0, 3, 5)) # IMPORTANT: you must have same number of things in each column
+
+# Look at the new 'sneks' tibble. Is it what you expected based on the above code?
+sneks
+
+# The 'sneks' tibble is *tidy* --let's use the pivot_wider() function to  "untidy" it
+sneks_wide <- sneks %>%                # this tibble is *tidy* -- let's untidy it!
+  pivot_wider(names_from = diet,       # we don't use "" here because we're referencing an existing column
+              values_from = no_eaten)  # the new column names will be taken from diet: "mice" & "rats"
+
+# Look at the *untidy* tibble
+sneks_wide # What makes this untidy?
+
+# Now that our tibble is *untidy* -- let's explore how to tidy it!
+sneks_long <- sneks_wide %>%           
+  pivot_longer(cols = c(mice, rats),   # Name the columns we'll be condensing into long form
+               names_to = "meal_type", # Use "" here because we are naming a NEW column
+               values_to = "count")    # This is the second 'new' column we are making so we have to name it too -- this column contains the numeric values associated with the "meal_type" column
+
+sneks #Look at the output below!!
+sneks_wide #Look at the output below!! Review the code above to understand how you got the output
+sneks_long #Look at the output below!! Review the code above to understand how you got the output
+```
+
+
+```{r pivot*_() continued}
+
+# If only our data could always be as easy to tidy & untidy -- let's look at a more realistic case:
+picky_sneks <- tibble(name = c("Tugboat", "Charlie", "Pinto", "Violet"),
+                      diet = c("mice", "mice", "eggs", "mice"),
+                      no_eaten = c(12, 9, 21, 8))
+
+picky_wide1 <- picky_sneks %>% 
+  pivot_wider(names_from = diet, values_from = no_eaten) 
+
+# use 'values_fill = 0' to replace NAs with zeroes
+picky_wide2 <- picky_sneks %>% 
+  pivot_wider(names_from = diet, values_from = no_eaten, values_fill = 0) 
+
+picky_long1a <- picky_wide1 %>% 
+  pivot_longer(cols = c(mice, eggs), names_to = "meal_type", values_to = "count")
+
+picky_long1b <- picky_wide1 %>% 
+  pivot_longer(cols = c(mice, eggs), names_to = "meal_type", values_to = "count") %>% drop_na() # removes rows w/ NAs
+
+picky_long2 <- picky_wide2 %>% 
+  pivot_longer(cols = c(mice, eggs), names_to = "meal_type", values_to = "count") 
+
+#Review the lines of code above and make sure you understand why you got the the output you have for each!!
+picky_sneks
+picky_wide1
+picky_wide2
+picky_long1a
+picky_long1b
+picky_long2
+```
+
+With all this new knowledge in mind, let's revisit last week's leafhopper data analysis...
+```{r leafhoppers again}
+step1 <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab1/leafhoppers.csv") 
+
+step2 <- step1 %>% gather(key = "plant_ID", value = "no_leafhoppers") # recall, gather() and pivot_longer() both convert data from wide to long format
+
+step2.0 <- step1 %>% # here is how to do step2 with the pivot_longer() function
+  pivot_longer(cols = c(plant_01, plant_02, plant_03, plant_04, plant_05), # here we must NAME the columns we wish to pivot
+               names_to = "plant_ID",                                      # same as key in gather()
+               values_to = "no_leafhoppers")                               # same as value in gather()
+
+#Review the lines of code above and make sure you understand why you got the the output you have below for each!!
+step1
+step2
+step2.0
+
+# Condensed code for doing the same thing (!!!):
+leafh<-read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab1/leafhoppers.csv") %>% pivot_longer(plant_01:plant_05,names_to = "plant_ID",                               values_to = "no_leafhoppers")
+
+# Look at the output -- is the the same as above?
+leafh
+
+# If you wish to change the column names after the fact:
+names(leafh)
+names(leafh)<-c("plantID","Nleafhoppers")
+leafh
+```
+
+To combine datasets, we can use the *_join() family of functions:
+full_join(), left_join(), inner_join() and right_join()
+```{r *_join()}
+# We can use the *_join() family of functions to easily combine different tibbles into one
+
+snake_diet <- 
+  tibble(name = c("Spaghetto", "Cervantes", "Pinto"), # three really cool snakes
+         eats = c("mice","rats","eggs"))              # that eat these things
+
+
+snake_lens <- 
+  tibble(name = c("Spaghetto", "Cervantes", "Dog"),   # Pinto is gone, Dog has appeared!
+         measures = c(30, 52, 87))                    # lengths of these snakes in inches
+
+# Look at the new tibles you've created!!!!
+snake_diet
+snake_lens
+
+# full_join(): Mash everything together and make a huge tibble full of NAs
+snake_diet %>% full_join(snake_lens)  
+
+# inner_join(): Only combine items for which you do NOT going to end up with NAs
+snake_diet %>% inner_join(snake_lens) 
+
+# left_join(): Move everything from data on right into the data on left side of the pipe %>% (most intuitive to me)
+snake_diet %>% left_join(snake_lens)  
+
+# right_join(): Swapping both the tibbles & the direction of the above line of code yields the same output but in reverse
+snake_lens %>% right_join(snake_diet) 
+
+# Alternatively, for completeness, run the above two lines of code both in reverse:
+snake_lens %>% left_join(snake_diet)  
+snake_diet %>% right_join(snake_lens) 
+
+#With the *_join() functions, R is automatically determining the variable/column, i.e., heading/name, on which to join but in some cases you might want/need to specify on which variable to combine the data
+```
+
+### NEW DATASET!! ###
+Let's work with a new 'sticky trap' dataset. These data show the number of individuals of different orders of insects that were collected in sticky traps placed for some number of days under different light treatments. 
+
+The select() and filter() functions allow us to pull out specific rows and columns of our data that we want
+
+```{r mutate_if() and filter()}
+sticky_traps<-read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week2_Aug28/sticky_traps.csv") # waaaaaay too many columns -- this is kind of messy!
+
+summary(sticky_traps) #Review the output here closely
+
+#If we'd like, instead of factoring columns with character data individually, we can factor all columns with character data in one fell swoop
+
+summary(sticky_traps %>% mutate_if(is.character, as.factor)) 
+# What changed when we converted columns with character data into factors? HINT: Compare the line of code above to the line of code above it!
+# How does this inform your understanding of what information is in the column?
+
+# Save the tibble with the data as factors
+sticky_traps <- sticky_traps %>% mutate_if(is.character, as.factor)
+
+#Finally, start selecting and filtering!! It can be helpful to break down these lines of code and run them one by one to understand what they are doing!
+
+#Below we will clean up the data by removing unwanted columns and rows
+
+# Select(): Allows us to pull out specific COLUMNS we want to keep -- look at the output below and compare to the sticky_traps tibble 
+sticky_traps %>% 
+  select(trap_ID, days_out, insect_order, count) 
+
+sticky_traps
+```
+
+We often use our "logical operators" with the filter() function.
+
+We can use the following logical operators in R:
+Logical operators:
+  ==        for checking if two things are the same!
+  >=        'greater than or equal to'
+  <=        'less than or equal to'
+  !=        'not equal to'
+  >         'greater than'
+  <         'less than'
+  %in%      for checking if a thing is in some list
+  &         'and' (for combining logical statements)
+  |        'or'  (for combining logical statements)
+  !         'not' (for negating logical statements)
+
+```{r select() and filter()}
+# Where select() allows us to specify which columns of data we want to keep, filter() allows us to tell R which ROWS of data we want to keep:
+sticky_traps %>% 
+  select(trap_ID, days_out, insect_order, count) %>% 
+  filter(insect_order %in% c("Coleoptera", "Lepidoptera")) # the criteria for rows we want to keep; filter data for the rows I want to keep
+
+# REMEMBER TO SCROLL DOWN BELOW THE CODE CHUNK TO LOOK AT THE OUTPUT!!!!!
+
+#OR (same output):
+
+sticky_traps %>% 
+  select(trap_ID, days_out, insect_order, count) %>% 
+  filter(insect_order == "Coleoptera"|insect_order == "Lepidoptera") # can also use the 'or' operator to tell R the rows we want to keep
+
+# Remember, we have to SAVE our filtered new data by calling it to an object if we want to use it later!
+sticky_traps2 <- sticky_traps %>% 
+  select(trap_ID, days_out, insect_order, count) %>% 
+  filter(insect_order %in% c("Coleoptera", "Lepidoptera"))
+```
+
+
+```{r select() and filter() and MORE EXAMPLES}
+# == logical operator
+sticky_traps3 <- sticky_traps %>% 
+  select(trap_ID, days_out, insect_order, count) %>% # select the names of columns we want to keep
+  filter(insect_order == "Coleoptera")
+
+# Combine more than one logical operator in the filter() function
+sticky_traps4 <- sticky_traps %>% 
+  select(trap_ID, days_out, insect_order, count) %>% # select the names of columns we want to keep
+  filter(insect_order %in% c("Coleoptera", "Lepidoptera") & days_out > 1) 
+
+# not equal to logical operator
+sticky_traps5 <- sticky_traps %>% 
+  select(trap_ID, days_out, insect_order, count) %>% 
+  filter(insect_order != "Diptera")
+
+#Review the lines of code above and make sure you understand why you got the the output you have below for each object (your three tibbles)!!
+sticky_traps3
+sticky_traps4
+sticky_traps5
+
+#some other useful functions...
+unique(sticky_traps$trap_ID)
+table(sticky_traps$trap_ID)
+```
+
+The separate() and unite() functions allow us to separate column data or combine column data
+```{r separate() and unite()}
+sticky_traps # trap_ID has information that I'd like to be in two separate columns
+
+sticky_separate <- sticky_traps %>% 
+  separate(trap_ID,                         # the column we want to split into multiple columns
+           into = c("date", "treatment"),   # the names of the new columns
+           remove = F) %>%                  # without this line we'll delete the original column
+  separate(date,                            # what if I want to split this column too?
+           into = c("month", "day"),        # R won't know where to make the split this time (none of these: '.' '_' '-' ' ')
+           sep = 2)                         # so we have to be explicit, here with a number referring to the letter place
+
+#Look at the object sticky_separate
+sticky_separate
+
+#What does the line of code below do to sticky separate? Do you understand how/why you are getting the output below from the lines of code below?
+
+sticky_separate %>%                    
+  unite(col = "date_updated",               # if we regret splitting the date into two columns like that 
+        c(month, day),                      # we can put them back together in a new column (named in previous line)
+        sep = ": Captain's log day ")       # and pick WHATEVER WE WANT as the separator, AKA the glue that binds them
+```
+
+### LAB EXERCISE ###
+
+In the sticky trap data, I noticed that most of what was caught belonged to the order Diptera (flies, mosquitoes, gnats, etc.). I decided to filter the data for (1) *ONLY* Diptera observations, and (2) *ONLY* traps that were out for less than six days. 
+
+Many of the Dipterans (e.g., gnats etc.) are super small, and the number of people that checked the sticky traps might affect the total number of Dipterans counted. Unfortunately, the data on the number of people counting are in another .csv file called `ID_effort.csv`, and they are NOT TIDY! :(
+
+YOUR JOB:
+
+Tidy the `ID_effort.csv` data and combine it with your filtered `sticky_traps.csv` data. Then plot the data to visualize the number of Diptera caught per nights out (y-axis) under each light treatment (x-axis), with the observations colored by observer effort. 
+
+(You can simply "feed" your final combined 'tidy' dataset into the plot code I've provided for you in the "FINAL ANSWER" chunk below). 
+
+Steps:
+
+1. Read in the data
+
+2. Filter the sticky_traps data as stated in the LAB EXERCISE above
+
+3. Tidy the ID_effort data (i.e., summarize the wide data with each observers presence into 2 long-format columns)
+
+4. Use the line of code provided in the just 'r lab assignment step 4' code chunk below to summarize the overall observer effort by treatment and date
+
+5. Combine the two datasets
+
+6. Insert your tidy-ed data into the ggplot code, 'lab assignment step 6', below. The ggplot line of code below will create a summary of the total number of people ("effort") that checked traps from each combination of date and treatment in the `ID_effort.csv` data set. The ggplot code chunk will only work once the data is tidy:
+
+```{r lab assignment step 4}
+# group_by(date, treatment) %>% summarize(effort = sum(<<name of a column you have made>>) 
+```
+
+```{r lab assignment step 6: ggplot for FINAL ANSWER}
+ggplot(sticky_combo, aes(x = treatment,                  # light treatment (dark, red, amber, or blue)
+                               y = count/days_out,             # number of Diptera caught / number of days trap was out
+                              fill = effort %>% as.factor)) + # effort will be a number, but we want it as a category
+  geom_jitter(height = 0, width = 0.25, shape = 21, size = 2, alpha = 0.75) + 
+  scale_fill_manual(name = "Number of observers", 
+                    values = c("darkred", "pink", "dodgerblue", "greenyellow")) +
+ labs(x = "Light treatment", y = "Attraction to sticky traps (number caught/nights out)") +
+ theme_bw()
+```

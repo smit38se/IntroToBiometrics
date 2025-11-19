@@ -1,0 +1,472 @@
+---
+title: "Somerville Gardens"
+author: "Lee Brown"
+date: "2025-09-20"
+output: html_document
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(car)
+library(bbmle)
+library(MASS)
+```
+
+# Drawing a pretty chi-square distribution
+```{r chi-square distribution}
+xvals <- seq(0,10, 0.1)
+
+yvals.pdf <- dchisq(xvals, 1) # probability distribution
+yvals.cdf <- pchisq(xvals, 1, lower.tail = T) # cumulative probability distribution
+
+ggplot() +
+  geom_line(aes(x = xvals,y = yvals.pdf), col = "red", size = 1) +
+  theme_classic(base_size = 16) +
+  geom_vline(xintercept = 2.8, linetype = "dashed", size = 1) +
+  labs(x = "2 x ln(likelihood ratio)", y = "proportion of studies") 
+
+ggplot() +
+  geom_line(aes(x = xvals,y = yvals.cdf), col = "red", size = 1) +
+  theme_classic(base_size = 16) +
+  geom_vline(xintercept = 2.80, linetype = "dashed", size = 0.75) +
+  geom_hline(yintercept = 0.95, col = "gray", size = 0.75) +
+  geom_hline(yintercept = 1-0.094, linetype = "dashed", size = 0.75) +
+  labs(x = "2 x ln(likelihood ratio)", y = "probability of X or lower") 
+
+pchisq(2.80, df=1, lower.tail = F)
+```
+
+# Load and tidy garden data
+```{r garden data}
+(dat <- read.csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/LectureRcode/Garden_flowers.csv") %>% pivot_longer(cols = 2:17, names_to = "FlowerType"))
+
+(dat1 <- dat %>% group_by(FlowerType, YardType) %>% summarize(total= sum(value)) %>% pivot_wider(names_from = "YardType", values_from = "total"))
+
+dat2 <- dat1 %>% pivot_longer(c("Conventional","Pollinator"), names_to = "YardType", values_to = "yards.with")
+
+dat2$yards.tot <- rep(50,nrow(dat2))
+
+dat2 # check that dataframe looks the way we want it to
+```
+
+# define pollinator vs non-pollinator flowers
+```{r pollinator vs nonpollinator plants}
+#all flowers
+(flowers <- unique(dat1$FlowerType))
+
+#pollinator plant category
+(poll.flwr <- c("Achillea","Asclepias","Aster","Campanula","Echinacea","Helianthus","Rudbeckia","Salvia"))
+
+#non-pollinator plant category
+(non.poll <- flowers[!flowers %in% poll.flwr])
+```
+
+# Study design
+50 conventional gardens surveyed
+50 pollinator gardens surveyed
+All gardens classified via Google Streetview
+
+Eight plants used to identify pollinator-friendly yards via Google Streetview
+
+# Question
+Does the proportion of yards with these pollinator-friendly plants differ between those classified as “pollinator-friendly” versus “conventional”?
+
+Expected results: Yes, there should be a significantly higher proportion of the pollinator-friendly plants in yards classifed as "pollinator-friendly"
+
+# Approach
+First, do the statistics "by hand" (not using the glm() function) both for practice and because the glm crashes when a category is only composed of 0's. We will learn ways to correct this later, but for simple models, one can take this "old-school" method
+
+# Single pollinator plant LLs
+```{r aster LLs by hand}
+# first test run for a single species, then create a loop to run for all
+dat2
+(asterdat <- dat2[dat2$FlowerType == "Aster",])
+
+#single probability
+(p.both = with(asterdat, sum(yards.with)/sum(yards.tot)))
+
+# different probability for conventional vs pollinator-friendly yards
+(p.sep = with(asterdat, yards.with/yards.tot))
+
+# Get LLs for single model vs separate probability of seeing asters in pollinator-friendly vs conventional yards
+(LL1 = sum(with(asterdat, dbinom(yards.with, yards.tot, p.both, log = T))))
+
+(LL2 = sum(with(asterdat, dbinom(yards.with, yards.tot, p.sep, log = T))))
+
+# Get statistic for comparing to a chi-square distribution
+(chistat = 2*(LL2-LL1))
+
+# Get p-value for comparing model with different probabilities for finding aster in conventional and pollinator-friendly yards vs single probability of seeing aster across all yard types
+(pval = pchisq(q = chistat, df = 1, lower.tail = F))
+```
+
+# Check above value with GLM
+```{r aster GLM}
+# single probability of seeing aster
+m1 <- glm(cbind(yards.with, 50-yards.with) ~ 1, family = binomial(link = "identity"), data = asterdat)
+
+coef(m1) # compare to probabilities obtained in above code chunk (p.both vs p.sep)
+logLik(m1) # compare to likelihoods calculated in above code chunk (LL1 vs LL2)
+
+m2 <- glm(cbind(yards.with, 50-yards.with) ~ 0 + YardType, family = binomial(link = "identity"), data = asterdat)
+
+coef(m2) # compare to probabilities obtained in above code chunk (p.both vs p.sep)
+logLik(m2) # compare to likelihoods calculated in above code chunk (LL1 vs LL2)
+```
+
+# Calculate CIs from LL profile
+```{r aster LL profile CIs}
+myprobs <- seq(0,1, 0.001)
+
+# CIs FOR CONVENTIONAL YARDS
+# first get LLs for all possible probabilities
+my.profile.conv <- with(asterdat[1,], dbinom(yards.with, yards.tot, myprobs, log = T))
+
+# Get CIs for probability of seeing asters in conventional yards
+# Recall that all values within 1.92 of the max LL value are not significantly different from the MLE and so fall within the CIs
+(CI.conv <- myprobs[which(my.profile.conv > (max(my.profile.conv)-1.92))])
+  
+# CIs FOR POLLINATOR-FRIENDLY YARDS
+my.profile.poll <- with(asterdat[2,], dbinom(yards.with, yards.tot,myprobs, log = T))
+
+# Get CIs for probability of seeing asters in pollinator-friendly yards
+(CI.poll <- myprobs[which(my.profile.poll > (max(my.profile.poll)-1.92))])
+```
+
+# Plot means and CIs for aster
+```{r plot aster probabilities}
+# Create a dataframe for plotting using ggplot
+aster_ci <- data.frame(
+  group = asterdat$YardType,
+  mean_val = p.sep,
+  lower_ci = c(min(CI.conv),min(CI.poll)),
+  upper_ci = c(max(CI.conv),max(CI.poll))
+)
+
+ggplot(aster_ci, aes(x = group, y = mean_val)) +
+  geom_point(color = "darkorchid", size = 3) + # Plot the mean values
+  geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.1, color = "darkorchid", size = 0.8) + # Add error bars
+  labs(x = "Yard type", y = "Proportion of yards") +
+  annotate("text", x = 0.7, y = 0.45, label = expression(chi^2)) +
+  annotate("text", x = 0.83, y = 0.44, label = " = 2.80") +
+  annotate("text", x = 0.8, y = 0.41, label = "P = 0.09")  +
+  theme_classic(base_size = 18)
+```
+
+# Plot cumulative probabilites for aster to visualize CIs
+```{r plot all results}
+# Cumulative probabilities for pollinator-friendly yards
+ggplot() +
+  geom_line(aes(x = myprobs[2:1000],y = my.profile.poll[2:1000]), size = 1) + #[2:1000] to remove the -Inf values for the LL at 0 and 1
+  theme_classic(base_size = 16) +
+  geom_vline(xintercept = min(CI.poll), linetype = "dashed", color = "blue",size = 0.75) +
+  geom_vline(xintercept = max(CI.poll), linetype = "dashed", color = "blue", size = 0.75) +
+  geom_hline(yintercept = max(my.profile.poll)-1.92, col = "green4", size = 1) +
+  labs(x = "possible proportion of\n pollinator-friendly yards with asters", y = "ln[L(model|data)]") 
+
+# Cumulative probabilities for conventional yards
+ggplot() +
+  geom_line(aes(x = myprobs[2:1000],y = my.profile.conv[2:1000]), col = "darkgray",size = 1) + #[2:1000] to remove the -Inf values for the LL at 0 and 1
+  theme_classic(base_size = 16) +
+  geom_vline(xintercept = min(CI.conv), linetype = "dashed", color = "blue",size = 0.75) +
+  geom_vline(xintercept = max(CI.conv), linetype = "dashed", color = "blue", size = 0.75) +
+  geom_hline(yintercept = max(my.profile.conv)-1.92, col = "green4", size = 1) +
+  labs(x = "possible proportion of\n conventional yards with asters", y = "ln[L(model|data)]") 
+```
+
+# Loop over all pollinator-friendly yards to calculate means/CIs and p-values and plot results to file
+```{r calculate LLs looped over flower types}
+AllFlowers <- c(poll.flwr,non.poll)
+
+color.flowers <- c("darkolivegreen3", "darkorange","darkorchid", "cornflowerblue", "orchid", "goldenrod", "chocolate4", "midnightblue", "lightgoldenrod","gold","skyblue", "magenta","pink3","tomato","red", "purple")
+
+
+myprobs <- seq(0,1, 0.001)
+
+mystats <- data.frame(
+  plant = AllFlowers,
+  chixchi = NA,
+  pvalue = NA,
+  mean.poll = NA,
+  mean.conv = NA,
+  lowerCI.poll = NA,
+  upperCI.poll = NA,
+  lowerCI.conv = NA,
+  upperCI.conv = NA)
+
+plotresults <- data.frame(
+  group = tempdat$YardType,
+  mean_val = NA,
+  lower_ci = NA,
+  upper_ci = NA)
+
+for(i in 1:length(AllFlowers)){
+# temp df to calculate values
+  tempdat <- dat2[dat2$FlowerType == AllFlowers[i],] 
+# calculate statistics
+  p.both <- with(tempdat, sum(yards.with)/sum(yards.tot))
+  p.sep <- with(tempdat, yards.with/yards.tot)
+  LL1 <- sum(with(tempdat, dbinom(yards.with, yards.tot, p.both, log = T)))
+  LL2 <- sum(with(tempdat, dbinom(yards.with, yards.tot, p.sep, log = T)))
+  chistat <- 2*(LL2-LL1)
+  pval <- pchisq(q = chistat, df = 1, lower.tail = F)
+# get LLs for all possible probabilities
+  my.profile.conv <- with(tempdat[1,], dbinom(yards.with, yards.tot, myprobs, log = T))
+  my.profile.poll <- with(tempdat[2,], dbinom(yards.with, yards.tot,myprobs, log = T))
+# get CIs
+  CI.conv <- myprobs[which(my.profile.conv > (max(my.profile.conv)-1.92))]
+  CI.poll <- myprobs[which(my.profile.poll > (max(my.profile.poll)-1.92))]
+# fill values in df:
+  mystats$chixchi[i] <- chistat
+  mystats$pvalue[i] <- pval
+  mystats$mean.conv[i] <- p.sep[1]
+  mystats$mean.poll[i] <- p.sep[2]
+  mystats$lowerCI.poll[i] <- min(CI.poll)
+  mystats$upperCI.poll[i] <- max(CI.poll)
+  mystats$lowerCI.conv[i] <- min(CI.conv)
+  mystats$upperCI.conv[i] <- max(CI.conv)
+# fill in df for plotting results
+  plotresults$mean_val <- p.sep
+  plotresults$lower_ci <- c(min(CI.conv),min(CI.poll))
+  plotresults$upper_ci <- c(max(CI.conv),max(CI.poll))
+# plot results
+ ggplot.results <-
+    ggplot(plotresults, aes(x = group, y = mean_val)) +
+    ylim(0,0.75) +
+    geom_point(color = color.flowers[i], size = 3) + # Plot the mean values
+    geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.1, color = color.flowers[i], size = 0.8) + # Add error bars
+    labs(x = "Yard type", y = "Proportion of yards") +
+    annotate("text", x = 0.7, y = 0.68, label = expression(chi^2)) +
+    annotate("text", x = 0.83, y = 0.68, label = paste(" = ", round(mystats$chixchi[i],digits = 3), sep = "")) +
+    annotate("text", x = 0.77, y = 0.65, label = paste("P = ", round(mystats$pvalue[i],digits = 3), sep = ""))  +
+    theme_classic(base_size = 18)
+  ggsave(paste("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab6/figures/",AllFlowers[i],".pdf",sep = ""),ggplot.results)
+}
+```
+
+# Compare AIC and LRT - with shortcuts that we will use later
+```{r AIC and LRT comparisons}
+myout <- array(NA, dim = c(16,4))
+
+for(i in 1:16){
+  usedat <- dat[dat$FlowerType == AllFlowers[i],]
+  w1 <- glm(value ~ 1, family = binomial, data = usedat) #usedat[complete.cases(usedat)==T,])
+  w2 <- glm(value ~ YardType, family = binomial, data = usedat) #usedat[complete.cases(usedat)==T,])
+  myout[i,] <- unlist(c(Anova(w2)[c(1,3)], ICtab(w1,w2, sort = F)[1]))
+}
+
+myout2 <- as_tibble(myout)
+names(myout2) <- names(unlist(c(Anova(w2)[c(1,3)], ICtab(w1,w2, sort = F)[1])))
+myout2$FlowerType <- AllFlowers
+
+myout2
+```
+
+# Competing models for the probability of roses in yards
+1) Same probability of roses in all yards
+2) Probability of roses depends on yard type (conventional vs. pollinator-friendly)
+3) Probability of roses depends on neighborhood
+4) Probability of roses depends on latitude (north-south)
+5) Probability of roses depends on longitude (east-west)
+
+Model 1: Same probability of roses in all yards
+```{r roses - competing models - single p}
+# limit data to rows for which the flower type is a Rose
+usedat <- dat[dat$FlowerType == "Rose",]
+
+# Note that in this version of the data each row is a 0 or 1
+# That's okay for glm(), we just don't need the cbind() function
+
+z1 <- glm(value ~ 1, family = binomial(link = "identity"), data = usedat[complete.cases(usedat)==T,])
+
+(z1mean <- coef(z1))
+logLik(z1)
+
+(z1confint <- confint(z1))
+AIC(z1)
+
+plotresults <- data.frame(
+  group = "all sites",
+  mean_val = as.numeric(coef(z1)),
+  lower_ci = as.numeric(z1confint[1]),
+  upper_ci = as.numeric(z1confint[2]))
+
+ggplot(plotresults, aes(x = group, y = mean_val)) +
+  geom_point(color = "tomato", size = 3) + 
+  geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.1, color = "tomato", size = 0.8) +
+  ylim(0,0.9) +
+  labs(x = "Yard type", y = "Proportion of yards\n with roses") +
+  theme_classic(base_size = 18)
+```
+
+Model 2: Probability differs by yard type
+```{r roses - competing models - yard type}
+z2 <- glm(value ~ 0 + YardType, family = binomial(link = "identity"), data =  usedat[complete.cases(usedat)==T,])
+
+coef(z2)
+logLik(z2)
+confint(z2)
+AIC(z2)
+
+# Plot me on your own!
+plotCI(1:2, coef(z2), li = confint(z2)[,1], ui = confint(z2)[,2], xlim = c(0.5,2.5), ylim = c(0,1), xaxt = "n", ylab = "", xlab = "", pch = 19, col = 'tomato', lwd = 3)
+  axis(side = 1, at = 1:2, labels = c("Conv.", "Poll."))
+  mtext(side = 1, line = 2, "Yard Type")
+  mtext(side = 2, line = 2, "prop. yards with roses")
+```
+
+Model 3: Probability differs by neighborhood
+```{r roses - competing models - neighborhood}
+z3 <- glm(value ~ 0+NEIGHBORHOOD, family = binomial(link = "identity"), start=rep(0.01,12), data =  usedat[complete.cases(usedat)==T,])
+
+logLik(z3)
+AIC(z3)
+
+  
+# Shenanigans to get plot of values for each group
+myprobs <- seq(0,1, 0.001)
+mylevels <- unique(usedat$NEIGHBORHOOD)[order(unique(usedat$NEIGHBORHOOD))]  
+my.prof <- array()
+low.CI <- array()
+upp.CI <- array()
+MLEs <- array()
+
+for(i in 1:length(mylevels)){
+  usedat2 <- dat[dat$NEIGHBORHOOD == mylevels[i],]
+  for(j in 1:length(myprobs)){
+    my.prof[j] <- with(usedat2, sum(dbinom(value, 1, myprobs[j], log = T)))
+  }
+  my.CI = myprobs[which(my.prof > (max(my.prof)-1.92))]
+  MLEs[i] = myprobs[which(my.prof == max(my.prof))]
+  low.CI[i] = min(my.CI)
+  upp.CI[i] = max(my.CI)
+}
+
+low.CI
+upp.CI
+MLEs
+# compare MLEs to:
+coef(z3)
+
+# Convert the plot below to ggplot code
+plotCI(1:12, MLEs, li = low.CI, ui = upp.CI, xlim = c(0.5,12.5), ylim = c(0,1), xaxt = "n", ylab = "", xlab = "", pch = 19, col = 'tomato', lwd = 3)
+## Draw the x-axis labels.
+text(x = 1:length(mylevels),
+     ## Move labels to just below bottom of chart.
+     y = par("usr")[3] - 0.02,
+     ## Use names from the data list.
+     labels = mylevels,
+     ## Change the clipping region.
+     xpd = NA,
+     ## Rotate the labels by 35 degrees.
+     srt = 25,
+     ## Adjust the labels to almost 100% right-justified.
+     adj = 0.965, cex = 0.9)
+mtext(side = 2, line = 2, "prop. yards with roses")
+```
+
+Model 4: Probability is a function of latitude
+```{r roses - competing models - latitude}
+z4 <- glm(value ~ lat, family = binomial(link = "identity"), data = usedat[complete.cases(usedat)==T,])
+
+coef(z4)
+logLik(z4)
+AIC(z4)
+  
+# model 4 - latitude
+minLat <- min(usedat$lat, na.rm = T)
+maxLat <- max(usedat$lat, na.rm = T)
+mylats <- seq(minLat, maxLat, length.out=100)
+mypreds <- predict(z4, newdata = data.frame(lat = mylats), se.fit = T)
+
+# Convert the plot below to ggplot code
+plot(mylats, mypreds$fit, ylim = c(0, 1), xlab = "", ylab = "", type = "l", lwd = 4, col = "tomato")
+#points(mylats, mypreds$fit - 1.96*mypreds$se.fit, col = "tomato", type = "l", lwd = 2, lty = "dotted")
+#points(mylats, mypreds$fit + 1.96*mypreds$se.fit, col = "tomato", type = "l", lwd = 2, lty = "dotted")
+points(usedat$lat, usedat$value)
+mtext(side = 1, line = 2, "Latitude")
+#mtext(side = 1, line = 3, at = c(minLat, maxLat), c("south", "north"))
+mtext(side = 2, line = 2, "prop. yards with roses")
+```
+
+Model 5: Probability is a function of longitude
+```{r roses - competing models - longitude}
+z5 <- glm(value ~ long, family = binomial(link = "identity"), data =  usedat[complete.cases(usedat)==T,])
+
+coef(z5)
+logLik(z5)
+AIC(z5)
+  
+# model 5 - longitude
+minLon = min(usedat$long, na.rm = T)
+maxLon = max(usedat$long, na.rm = T)
+mylons = seq(minLon, maxLon, length.out=100)
+mypreds = predict(z5, newdata = data.frame(long = mylons), se.fit = T)
+
+# Convert the plot below to ggplot code
+plot(mylons, mypreds$fit, ylim = c(0, 1), xlab = "", ylab = "", type = "l", lwd = 4, col = "tomato")
+#points(mylons, mypreds$fit - 1.96*mypreds$se.fit, col = "tomato", type = "l", lwd = 2, lty = "dotted")
+#points(mylons, mypreds$fit + 1.96*mypreds$se.fit, col = "tomato", type = "l", lwd = 2, lty = "dotted")
+points(usedat$long, usedat$value)
+mtext(side = 1, line = 2, "Longitude")
+#mtext(side = 1, line = 3, at = c(minLon, maxLon), c("west", "east"))
+mtext(side = 2, line = 2, "prop. yards with roses")
+```
+
+Exploring LL's, AIC's & Akaike weights
+```{r}
+# LLs for each model
+(z_LLs <- round(rbind(logLik(z1),logLik(z2),logLik(z3),logLik(z4),logLik(z5)),2))
+
+# Number of parameters for each model
+(Nparam_LLs <- c(length(coef(z1)),length(coef(z2)),length(coef(z3)),length(coef(z4)),length(coef(z5))))
+
+# Convert LLs to AICs (as proof of concept)
+2 * Nparam_LLs - 2 * z_LLs
+
+# Get AIC from model using AIC() function
+# Display comparison of model AICs using ICtab() function
+
+# Different ways of showing output from ICtab
+ICtab(z1,z2,z3,z4,z5, delta = F, base = T, sort = F)
+ICtab(z1,z2,z3,z4,z5, sort = F)
+ICtab(z1,z2,z3,z4,z5, sort = F, weights = T)
+ICtab(z1,z2,z3,z4,z5, base = T, weights = T)
+
+# Numerator for each model's Akaike weight
+exp(-0.5*ICtab(z1,z2,z3,z4,z5, sort = F)$dAIC)
+# Sum of the numerators
+sum(exp(-0.5*ICtab(z1,z2,z3,z4,z5, sort = F)$dAIC))
+
+
+
+#Comparing models 3 & 1
+2*(logLik(z3) - logLik(z1))
+```
+
+Comparing models 3 & 1 with LRT
+```{r comparing models 3 & 1 - PDF & CDF}
+
+# chi-square distribution with 11 df
+xvals = seq(0,40, 0.1)
+yvals.pdf = dchisq(xvals, 11) # probability distribution (PDF)
+yvals.cdf = pchisq(xvals, 11, lower.tail = T) # cumulative probability distribution (CDF)
+
+# highlight all 4 lines of code below at once to show plot
+plot(xvals, yvals.pdf, xlab = "", ylab = "", type = "l", col = "red", lwd = 3)
+mtext(side = 1, line = 2, "2 x ln(likelihood ratio)")
+mtext(side = 2, line = 2, "prop. of studies")
+abline(v = 27.3, col = "blue")
+
+# highlight all 5 lines of code below at once to show plot
+plot(xvals, yvals.cdf, xlab = "", ylab = "", type = "l", col = "red", lwd = 3, ylim = c(0,1))
+mtext(side = 1, line = 2, "2 x ln(likelihood ratio)")
+mtext(side = 2, line = 2, "prob. of X or lower")
+abline(h = 0.95, col = "gray")
+abline(v = 27.3, col = "blue")
+
+
+pchisq(27.3, df=11, lower.tail = F)
+```
+

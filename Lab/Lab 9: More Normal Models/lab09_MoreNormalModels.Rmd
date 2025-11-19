@@ -1,0 +1,713 @@
+---
+title: "BIO 456/556 - Lab 09 More Normal Models "
+author: "Lee Brown"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r libraries, message=FALSE}
+library(tidyverse)
+library(ggthemes)   # extra ggplot themes!
+library(bbmle)      # for ICtab()
+library(pscl)       # for zeroinfl()
+library(MASS)       # for glm.nb()
+library(car)        # for Anova()
+library(lmtest)     # for lrtest()
+library(Hmisc)      # fixes problem with older ggplot code
+
+library(conflicted) # optional but useful for telling R from which package to pull a function that has the same name in more than one loaded package
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("summarize", "dplyr")
+```
+
+# REVIEW lab 8: bee censusing
+In this experiment, former graduate student Isaac Weinberg took eight two-frame honey bee observation hives, and subjected subsections of each hive to heat stress for 11 weeks. For each hive he heated either the top or bottom frame, and counted the comb contents once per week. He also counted comb contents in an approximately equally sized area (area_cm2) on the frame that was not heated. In general, bottom frames tend to contain more brood, and top frames tend to contain more food stores.
+
+```{r REVIEW lab 8, data wrangling}
+bees <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab9_MoreNormalModels/honey_bees.csv") %>%
+  mutate(hive_ID = as.factor(hive_ID)) # hive ID is a category, not a continuous predictor
+```
+
+Make at least one histogram that visualizes the distribution of brood counts in this dataset.
+
+QUESTION 13: Do Isaac's data follow a Poisson distribution? Are they zero-inflated? Justify your answers with reference to the histogram and raw data summary statistics (e.g., means and variances).
+
+```{r REVIEW lab 8, Q13}
+mean(bees$brood)
+var(bees$brood) # note the variance is way larger than the mean
+
+# can also look at the ratio of variance to mean >> 1, so not the same as assumed for a Poisson distribution
+var(bees$brood)/mean(bees$brood)
+
+ggplot(bees, aes(x = brood)) + geom_histogram(binwidth = 5) + theme_classic()
+ggplot(bees, aes(x = brood)) + geom_histogram(binwidth = 10) + theme_classic()
+```
+
+Use ICtab() followed by Anova() on a series of (not zero-inflated) Poisson regressions without interactions to find the predictor(s) that best explain Isaac's data. ACCOUNT FOR DIFFERENCES IN SEARCH AREA.
+
+QUESTION 14: Which of the predictors significantly improve model fit?
+
+```{r REVIEW lab 8, Q14}
+# Review the experiment summary above and look at the data again to see what are our potential predictors
+bees
+
+# Question we can ask: Do heat stress and/or frame location (top vs bottom) affect the brood count?
+
+# Use an offset to account for differences in search area
+# Potential models (ignoring interactions)
+m1 <- glm(brood ~ 1, offset = log(area_cm2), family = poisson, data = bees)
+m2 <- glm(brood ~ treatment, offset = log(area_cm2), family = poisson, data = bees)
+m3 <- glm(brood ~ frame, offset = log(area_cm2), family = poisson, data = bees)
+m4 <- glm(brood ~ treatment + frame, offset = log(area_cm2), family = poisson, data = bees)
+
+ICtab(m1, m2, m3, m4)
+
+Anova(m4)
+```
+Did we address the overdispersion in these data by including effects of certain parameters? Check the `m1$deviance` and `m1$df.residual` on each of your Poisson models to see if this is so.
+
+QUESTION 15: Which model has the "best" ratio of deviance to residual degrees of freedom? 
+
+```{r REVIEW lab 8, Q15}
+m1$deviance/m1$df.residual # greater than 3
+m2$deviance/m2$df.residual # greater than 3
+m3$deviance/m3$df.residual # greater than 3
+m4$deviance/m4$df.residual # greater than 3
+
+# Different approach #1: look at the AIC and overdispersion values simultaneously
+mytable<-ICtab(m1,m2,m3,m4,base = T, weights = T)
+mytable$overdispersion<-c(m1$deviance/m1$df.residual,m2$deviance/m2$df.residual, m3$deviance/m3$df.residual,m4$deviance/m4$df.residual)
+
+mytable
+
+# Different approach #2: look at the AIC and overdispersion values simultaneously
+tibble(parameters = c("brood ~ 1",
+                      "brood ~ treatment", 
+                      "brood ~ frame", 
+                      "brood ~ treatment + frame"),
+       deviance = c(m1$deviance, 
+                    m2$deviance, 
+                    m3$deviance, 
+                    m4$deviance),
+       residual.df = c(m1$df.residual,
+                       m2$df.residual,
+                       m3$df.residual,
+                       m4$df.residual),
+       dispersion = deviance/residual.df, # v. close to variance/mean
+       "overdispersed?" = dispersion > 3)
+```
+QUESTION 16: Are bee brood counts still overdispersed in the winning model? How do you know?
+
+*Yes the models are all still overdispersed! The ratios are much greater than 3.*
+
+Oops, Isaac forgot to include a column in his datasheet! He rather thoughtfully kept track of the color of socks that he was wearing when he collected data from his hives. Add the randomly generated socks predictor to your winning model from before, and see if it significantly improves model fit. 
+
+QUESTION 17: Does graduate student sock morphology predict the number of brood cells in these observation hives? Report both dAIC and Anova() p-values. 
+
+```{r REVIEW lab 8, add Isaac's sock color to the bee data}
+#I gave you this code to generate the data with sock color
+set.seed(50125)
+bees_complete <- bees %>%
+  mutate(socks = sample(c("striped","houndstooth","white","black",  
+                          "vaporwave","hearts","argyle","paisley"), 
+                        size = length(date), replace = T)) 
+```
+
+We know from Q14 above that treatment and frame location DO predict the number of brood cells 
+*well, except that the data were clearly overdispersed -- so we really should fix that issue first and make sure that treatment and frame are still significant predictors... but we'll come back to that below* 
+Add sock color to the best model from Q14 above to determine if sock morphology predicts the number of brood cells.
+
+```{r REVIEW lab 8, Q17}
+s1 <- glm(brood ~ treatment + frame, 
+          offset = log(area_cm2), 
+          family = poisson, 
+          data = bees_complete)
+s2 <- glm(brood ~ treatment + frame + socks, 
+          offset = log(area_cm2), 
+          family = poisson, 
+          data = bees_complete)
+
+ICtab(s1, s2)
+
+Anova(s2)
+```
+*Well this is concerning! How could this be?! These p-values are REALLY small.* 
+
+If these data are *actually* zero-inflated and/or negatively binomially distributed rather than poisson, these p-values could be misleadingly low (oh no)! 
+
+Use ICtab() followed by Anova() on set of ZERO-INFLATED Poisson and negative binomial regressions (still without interactions), with a single predictor for the binomial (zero-inflation) part of the model, to keep it simple...
+
+Zero-inflated models should include one of these: "|" to distinguish: [count] | [binomial] <- predictors
+
+QUESTION 18: Which model best explains Isaac's data? Do socks still significantly improve model fit?
+
+```{r REVIEW lab 8, Q18}
+# BTW offsets in glm.nb() are written differently: glm.nb(y ~ x + offset(log(z)), data = data)
+
+# but you don't actually have to use glm.nb() for this question (it doesn't fit zero-inflated models)
+
+# also keep the same count predictors that you used in the model above
+# we are mostly using ICtab to compete distributions, not predictors
+
+# code for running a regular negative binomial model (for future reference)
+# s3 <- glm.nb(brood ~ treatment + frame + socks + offset(log(area_cm2)), data = bees_complete)
+
+# s4 and s5 are fully saturated models -- I did not ask you to run these
+
+# I ran this out of curiosity to see if the 0-inflated negative binomial would be better than the 0-inflated Poisson in the most complicated case with three predictors for both the count and zero-inflation portions of the model
+
+# ~ treatment + frame + socks | ~ treatment + frame + socks
+s4 <- zeroinfl(brood ~ treatment + frame + socks, offset = log(area_cm2), 
+               dist = "poisson", data = bees_complete)
+s5 <- zeroinfl(brood ~ treatment + frame + socks, offset = log(area_cm2), 
+               dist = "negbin", data = bees_complete)
+
+ICtab(s4,s5, base = T, weights = T) # We can guess from this result that the 0-inflated negative binomial will be the best model below
+
+# The models below account for all potential predictors for the count portion of the model and with a single but different predictors for the zero inflation portion of the model 
+
+#0-inflated negative binomial models:
+s6 <- zeroinfl(brood ~ treatment + frame + socks | 1, offset = log(area_cm2), 
+               dist = "negbin", data = bees_complete)
+s7 <- zeroinfl(brood ~ treatment + frame + socks | treatment, offset = log(area_cm2), dist = "negbin", data = bees_complete)
+s8 <- zeroinfl(brood ~ treatment + frame + socks | frame, offset = log(area_cm2), 
+               dist = "negbin", data = bees_complete)
+
+#0-inflated Poisson models:
+s9 <- zeroinfl(brood ~ treatment + frame + socks | 1, offset = log(area_cm2), 
+              data = bees_complete)
+s10 <- zeroinfl(brood ~ treatment + frame + socks | treatment, offset = log(area_cm2), data = bees_complete)
+s11 <- zeroinfl(brood ~ treatment + frame + socks | frame, offset = log(area_cm2), data = bees_complete)
+
+
+ICtab(s1, s2, s4, s5, s6, s7, s8, s9, s10, s11, base = T, weights = T)
+
+Anova(s8) # marginal hypothesis test
+
+# look at the summary to understand the results
+summary(s8) 
+
+coef(s8)
+plogis(coef(s8)[11]) # bottom frame
+plogis(coef(s8)[11]+coef(s8)[12]) # top frame has a higher probability of 0s
+
+# Compare the 0-inflation portions of the model
+ICtab(s6, s8)
+
+#To get a p-value for the 0-inflation predictor
+lrtest(s6, s8)
+#
+```
+
+- Phew! Socks is no longer a significant predictor!
+- Interestingly neither is frame (for the count portion of the model), but treatment is!
+- The top frame has a higher probability of 0s, which is consistent with the statement above that "in general, bottom frames tend to contain more brood, and top frames tend to contain more food stores."
+
+SUMMARY STATEMENT 
+
+The top hive frames were significantly more likely to contain brood (likelihood ratio test: $\chi^2$ = 17.86, df = 1, P < 0.0001 *or* dAIC = 15.9). The average brood count was significantly lower in heated frames (zero-inflated negative binomial GLM, marginal hypothesis test: treatment: $\chi^2$ = 15.30, df = 1, P = 0.0001). There was no effect of frame position or the observer's sock color on the brood count (top vs bottom frames: $\chi^2$ = 0.1918, df = 1, P = 0.6614; sock color: $\chi^2$ = 11.94, df = 7, P = 0.1024).
+
+Note: If the effect was not significant, it is typically not necessary to include the stats in the summary!
+
+
+# Normal models!! 
+Make some plots with the same means and different standard deviations
+```{r a long-awaited return to normalcy}
+no_replicates <- 100000 
+mean_1 <- 0
+mean_2 <- 50
+mean_3 <- 100
+sd_1 <- 3
+sd_2 <- 9
+sd_3 <- 18
+
+new_retro <- c("#9239F6","#903495","#6F3460", # nice vaporwave palette
+               "#4A354F","#D20076","#FF0076",
+               "#FF4373","#FF6B58","#F8B660")
+
+distributions <- 
+  tibble(norm1 = rnorm(n = no_replicates, mean = mean_1, sd = sd_1)) %>% 
+  mutate(norm2 = rnorm(n = no_replicates, mean = mean_1, sd = sd_2),
+         norm3 = rnorm(n = no_replicates, mean = mean_1, sd = sd_3),
+         norm4 = rnorm(n = no_replicates, mean = mean_2, sd = sd_1),
+         norm5 = rnorm(n = no_replicates, mean = mean_2, sd = sd_2),
+         norm6 = rnorm(n = no_replicates, mean = mean_2, sd = sd_3),
+         norm7 = rnorm(n = no_replicates, mean = mean_3, sd = sd_1),
+         norm8 = rnorm(n = no_replicates, mean = mean_3, sd = sd_2),
+         norm9 = rnorm(n = no_replicates, mean = mean_3, sd = sd_3)) %>% 
+  pivot_longer(cols = starts_with("norm"), # all columns beginning with "norm"
+               names_to = "distribution", 
+               values_to = "random_value") %>%
+  mutate(mu = rep(c(mean_1, mean_2, mean_3), each = 3, 
+                  length.out = length(distribution)),
+         SD = rep(c(sd_1, sd_2, sd_3), 
+                  length.out = length(distribution))) # repeat to fill column
+
+ggplot(distributions, aes(x = random_value, fill = interaction(SD, mu, sep = ":"))) +
+  geom_histogram(binwidth = 0.05, 
+                 alpha = 0.5,
+                 position = "identity") +
+  scale_fill_manual(name = "SD:mean", values = new_retro) +
+  theme_fivethirtyeight() + # from the "ggthemes" package
+  theme(panel.background = element_rect(fill = "white"),
+        plot.background = element_rect(fill = "white")) +
+  labs(x = "", y = "") + guides(fill = guide_legend(nrow = 3)) + 
+  ylim(0, 1000) + xlim(-50,150)
+```
+Normally distributed data can go below 0, particularly when the means are smaller.
+They can contain decimal points.
+Smaller variance --> peakier plots
+
+NEW DATASET
+Let's work with a built-in dataset in R: ToothGrowth is a built-in dataset of the effect of vitamin C amount and the type of vitamin C delivered on tooth growth
+# len = length of teeth
+# supp = delivery method
+# dose = mg/day
+```{r built-in guinea pig teeth dataset - look at data}
+# Look at the data
+ToothGrowth 
+summary(ToothGrowth)
+table(ToothGrowth$dose)
+```
+
+```{r built-in guinea pig teeth dataset - plot data}}
+# This plot shows the data at least 'sort of' normally distributed
+ggplot(ToothGrowth, aes(x = len, 
+                  fill = interaction(dose, supp, sep = ":"))) + 
+  geom_histogram(binwidth = 5) + # play with the binwidth to see how the plot changes, e.g., try changing it to a 2 and then to an 8
+  scale_fill_manual(name = "dose:delivery", 
+                    values = new_retro[c(7:9,1:3)]) + 
+  theme_bw() + labs(x = "odontoblast length (mm)")
+
+# This plot separates out the Vitamin C types x dose level
+ggplot(ToothGrowth, aes(x = len, 
+                  fill = interaction(dose, supp, sep = ":"))) + 
+  geom_histogram(binwidth = 5) + # play with the binwidth to see how the plot changes, e.g., try changing it to a 2 and then to an 8
+  facet_wrap(~interaction(dose, supp, sep = ":")) +
+  scale_fill_manual(name = "dose:delivery", 
+                    values = new_retro[c(7:9,1:3)]) + 
+  theme_bw() + labs(x = "odontoblast length (mm)")
+```
+
+```{r built-in guinea pig teeth dataset - reformat}
+tooth <- ToothGrowth %>% 
+  mutate(supp = factor(supp, 
+                       levels = c("OJ", "VC"), 
+                       labels = c("orange juice", "ascorbic acid")),
+         dose.log = log(dose),
+         dose.cat = as.factor(dose)) #categorical version of dose
+
+# look at data - do we get what we expected from the above code?
+tooth
+
+# Reformat the data again to get summary statistics for each unique combination of Vitamin C type and dose
+(teeth <- tooth %>%
+  group_by(dose, dose.log, dose.cat, supp) %>%
+  summarize(tooth_mu = mean(len),
+            tooth_SD = sd(len),
+            tooth_SE = sd(len)/sqrt(length(len)), # length() counts cells in vector
+            tooth_CI = tooth_SE*1.96)) # ****This only works reliably with normally distributed data!!!****
+```
+
+```{r built-in guinea pig teeth dataset - replot}
+ggplot(teeth, aes(x = dose, 
+                  y = tooth_mu, 
+                  color = supp)) + 
+  geom_line() + 
+  geom_errorbar(aes(ymin = tooth_mu - tooth_CI, 
+                    ymax = tooth_mu + tooth_CI), width = 0.05) +
+  geom_jitter(data = tooth, aes(y = len),
+              height = 0, width = 0.1) +
+  scale_color_manual(name = "delivery method", 
+                     values = new_retro[c(9,1)]) +
+  theme_bw() + labs(x = "vitamin C dose (mg/day)", 
+                    y = "odontoblast length (mm)")
+
+# try log(dose) and see what happens
+ggplot(teeth, aes(x = log(dose), 
+                  y = tooth_mu, 
+                  color = supp)) + 
+  geom_line() + 
+  geom_errorbar(aes(ymin = tooth_mu - tooth_CI, 
+                    ymax = tooth_mu + tooth_CI), width = 0.05) +
+  geom_jitter(data = tooth, aes(y = len),
+              height = 0, width = 0.1) +
+  scale_color_manual(name = "delivery method", 
+                     values = new_retro[c(9,1)]) +
+  theme_bw() + labs(x = "vitamin C dose (mg/day)", 
+                    y = "odontoblast length (mm)")
+
+# log(2) == 0.6931472
+# log(0.5) == -0.6931472
+```
+
+Analyse the tooth growth data!!
+```{r built-in guinea pig teeth dataset - analyze data}
+# First run models with the numeric value of dose
+m1 <- glm(len ~ supp, family = gaussian, data = tooth)
+m2 <- glm(len ~ dose, family = gaussian, data = tooth)
+m3 <- glm(len ~ supp + dose, family = gaussian, data = tooth)
+m4 <- glm(len ~ supp*dose, family = gaussian, data = tooth)
+ICtab(m1, m2, m3, m4)
+
+m4.lm <- lm(len ~ supp*dose, data = tooth) # Note: same model as above!
+m4
+m4.lm
+Anova(m4) # marginal hypothesis test
+Anova(m4.lm) # but does a different test -- an actual ANOVA! The reported statistic is different here (F-statistic instead of Chisq-statistic), but the p-values are the same because this is a normal model
+coef(m4)
+
+# Now run models with the logged value of dose or categorical dose
+m5 <- glm(len ~ supp + dose.log, family = gaussian, data = tooth)
+m6 <- glm(len ~ supp*dose.log, family = gaussian, data = tooth)
+m7 <- glm(len ~ supp + dose.cat, family = gaussian, data = tooth)
+m8 <- glm(len ~ supp*dose.cat, family = gaussian, data = tooth)
+
+ICtab(m1, m2, m3, m4, m5, m6, m7, m8)
+Anova(m8)
+
+# When both predictors are categorical, we can use a hack to get the means for all groups; be sure to remove the intercept
+m8.co <- glm(len ~ -1 + supp:dose.cat, family = gaussian, data = tooth)
+coef(m8.co)
+confint(m8.co)
+
+#OR making this new column also works the same way
+tooth$toothxdose<-paste(tooth$supp,tooth$dose.cat, sep="_")
+tooth
+
+m8.co2 <- glm(len ~ -1 + toothxdose, family = gaussian, data = tooth)
+coef(m8.co2) #compare to coef(m8.co) above
+confint(m8.co2)
+
+teeth #compare to summary statistics obtained above
+teeth$LCI<-teeth$tooth_mu - teeth$tooth_CI # compare to LCI from m8.co or m8.co2
+teeth$UCI<-teeth$tooth_mu + teeth$tooth_CI # compare to UCI from m8.co or m8.co2
+
+teeth
+```
+
+Cool data plots
+```{r also here are some cool ggplots}
+# CIs estimated with SEx1.96 rule of thumb
+CIsSE196 <- ggplot(teeth, aes(x = dose, # try log(dose) and see what happens!
+                  y = tooth_mu, 
+                  color = supp)) + 
+  geom_line() + geom_point(size = 2) + 
+  geom_errorbar(aes(ymin = tooth_mu - tooth_CI, 
+                    ymax = tooth_mu + tooth_CI), width = 0.05) +
+  # geom_point(data = tooth, aes(y = len), alpha = 0.25) +
+  scale_color_manual(name = "delivery method", 
+                     values = new_retro[c(9,1)]) +
+  theme_bw() + labs(x = "vitamin C dose (mg/day)", 
+                    y = "odontoblast length (mm)")
+
+#Same as above but CIs fit using LRT (confint() in predict() function for our m8)
+ConfintCIs <- ggplot(tooth, aes(x = dose,
+                  y = predict(m8), # try out different models! 
+                  color = supp)) + 
+  geom_line() + # goes away if x = dose.cat
+  geom_point(size = 2) +
+  geom_errorbar(data = teeth, 
+               aes(y = tooth_mu, 
+                  ymin = confint(m8.co)[,1], 
+                   ymax = confint(m8.co)[,2]), 
+               width = 0.05) +
+  #geom_point(data = tooth, aes(y = len), alpha = 0.25) +
+  scale_color_manual(name = "delivery method", 
+                     values = new_retro[c(9,1)]) +
+  theme_bw() + labs(x = "vitamin C dose (mg/day)", 
+                    y = "odontoblast length (mm)")
+
+# Note the differences and similarities between the two plots below
+CIsSE196
+ConfintCIs
+```
+
+More cool variations on plotting the data
+```{r cool variations on the above ggplots}
+#Similar to above but different way of visualizing CIs
+ggplot(tooth, aes(x = dose,
+                  y = predict(m8), # try out different models! 
+                  color = supp)) + 
+  geom_line() + # goes away if x = dose.cat
+  geom_point(size = 2) +
+  #geom_errorbar(data = teeth, 
+  #              aes(y = tooth_mu, 
+  #                  ymin = confint(m8.co)[,1], 
+  #                  ymax = confint(m8.co)[,2]), 
+  #              width = 0.05) +
+  geom_point(data = tooth, aes(y = len), alpha = 0.25) +
+  scale_color_manual(name = "delivery method", 
+                     values = new_retro[c(9,1)]) +
+  theme_bw() + labs(x = "vitamin C dose (mg/day)", 
+                    y = "odontoblast length (mm)")
+
+# Similar to above but dose is categorical so line disappears
+ggplot(tooth, aes(x = dose.cat,
+                  y = predict(m8), # try out different models! 
+                  color = supp)) + 
+  geom_line() + # goes away if x = dose.cat
+  geom_point(size = 2) +
+  geom_errorbar(data = teeth, 
+               aes(y = tooth_mu, 
+                  ymin = confint(m8.co)[,1], 
+                   ymax = confint(m8.co)[,2]), 
+               width = 0.05) +
+  #geom_point(data = tooth, aes(y = len), alpha = 0.25) +
+  scale_color_manual(name = "delivery method", 
+                     values = new_retro[c(9,1)]) +
+  theme_bw() + labs(x = "vitamin C dose (mg/day)", 
+                    y = "odontoblast length (mm)")
+
+
+# ggplot smoothing function creates a smooth line between the points
+ggplot(tooth, aes(x = dose, #try log(dose),
+                  y = len, 
+                  color = supp)) + 
+  geom_point(alpha = 0.25) +
+  geom_smooth(method = "glm", alpha = 0.25) + # THIS DOESN'T ALWAYS DO WHAT WE WANT -- it's better if we use log(dose)
+  scale_color_manual(name = "delivery method", 
+                     values = new_retro[c(9,1)]) +
+  theme_bw() + labs(x = "vitamin C dose (mg/day)", 
+                    y = "odontoblast length (mm)")
+
+#Compare one of the models from above with an interaction to one without an interaction
+ggplot(tooth, aes(x = dose,
+                  y = predict(m6), # try out different models! 
+                  color = supp)) + 
+  geom_line(size = 1)  +
+  geom_point(aes(y = len), alpha = 0.25) +
+  scale_color_manual(name = "delivery method", 
+                     values = new_retro[c(9,1)]) +
+  theme_bw() + labs(x = "vitamin C dose (mg/day)", 
+                    y = "odontoblast length (mm)")
+```
+
+## Lab Exercises for YOU ##
+
+# PART I: firefly larvae
+These are data on the growth of firefly larvae in response to light.
+
+Treatments were:
+1) all darkness
+2) 12 hrs light/12 hrs darkness
+3) 12 hrs light/12 hrs dim light at night (dLAN)
+
+Data:
+Treatment = Treatments listed above
+larvalID = ID for each individual larva
+fortnight = each of 8 fortnights (2 week periods)
+replicate = 2 replicates per treatment (helps to account for pseudoreplication)
+container = ID for each of the 2 containers used to replicate the treatments
+baseline = initial weight
+mass = mass each fortnight
+mass_delta = change in mass
+order = fortnight as a numeric term
+
+Read in and wrangle the data
+```{r read in and wrangle data}
+larvae <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab9_MoreNormalModels/larval_growth.csv") %>%
+  rename(fortnight_1 = `9/10/18`,
+         fortnight_2 = `9/24/18`,
+         fortnight_3 = `10/8/18`,
+         fortnight_4 = `10/22/18`,
+         fortnight_5 = `11/5/18`,
+         fortnight_6 = `11/19/18`,
+         fortnight_7 = `12/3/18`,
+         fortnight_8 = `12/17/18`) %>%
+  pivot_longer(fortnight_1:fortnight_8,
+               names_to = "fortnight", 
+               values_to = "mass") %>%
+  mutate(container = treatment, # make a copy of explicit treatment data
+         replicate = rep(c("first", "second"), 3, each = 32),
+         treatment = treatment %>% # consolidate treatment data into three levels
+           factor(labels = c("12/12", "12/12","dLAN", "dLAN","dark", "dark")) %>%
+           factor(levels = c("12/12", "dark", "dLAN")),
+         baseline = rep(mass[fortnight == "fortnight_1"], each = 8),
+         mass_delta = (mass - baseline)/baseline,
+         order = substr(fortnight, 11, 11) %>% as.numeric() - 1)
+```
+
+Take a good look at the data to understand what's there
+```{r look at the data}
+larvae
+summary(larvae)
+summary(larvae %>% mutate_if(is.character, as.factor))
+dim(larvae)
+unique(paste(larvae$treatment, larvae$replicate, larvae$container))
+
+#Number of larvae per treatment
+larvae %>% group_by(treatment) %>% summarize(number_of_larvae = n()/8)
+```
+
+```{r plot the data}
+#Plot of relative growth rate over time with 95% CIs
+ggplot(larvae, aes(x = fortnight, 
+                   y = mass_delta, 
+                   group = treatment, 
+                   color = treatment)) + 
+  stat_summary(geom = "line", fun = mean, size = 1) + 
+  stat_summary(geom = "line", fun = mean, size = 1, 
+               aes(linetype = treatment), color = "gray95") + 
+  scale_linetype_manual(guide = F, name = "", values = c("dashed", "blank", "dashed")) +
+  stat_summary(geom = "errorbar", fun.data = mean_cl_boot, # 95% CI using bootstrap method
+               width = 0, size = 0.75, position = position_dodge(0.15)) +
+  scale_color_manual(name = "", values = c("gray45", "black", "#b2b2ff")) +
+  scale_y_continuous(labels = function(x) paste0((1+x)*100, "%")) +
+  scale_x_discrete(labels = c("week 0","week 2","week 4","week 6",
+                              "week 8","week 10","week 12","week 14")) +
+  labs(x = "", y = "relative growth rate") + 
+  theme_bw() + theme(plot.background = element_rect(fill = "white"),
+                     panel.background = element_rect(fill = "white"),
+                     panel.grid.minor = element_blank(),
+                     panel.grid.major = element_line(size = 0.25, 
+                                                     linetype = "solid",
+                                                     colour = "gray95"),
+                     strip.background = element_rect(color="white", fill="white"),
+                     legend.position = "top")
+```
+
+## Part I: QUESTION 1
+Make a histogram that visualizes the distribution of relative growth rates (`mass_delta`).
+Do these data fit a normal distribution? Justify your answer using first principles.
+
+```{r question 1}
+#### YOUR
+#### CODE
+#### GOES
+#### HERE
+```
+
+## Part I: QUESTION 2
+We want to know if exposure to `dLAN` significantly impacted the growth of larvae in that group, when compared to the growth of larvae in either of the control groups (`12/12` and `dark`).
+
+Should we include an effect of 'fortnight' or 'order'? What's the difference between the two? (I.e., What is the difference with respect to the type of data in each column and the output of a model we might build)?
+
+Should we include an *interaction* between treatment and one of these measures of time? Why or why not...? (I.e., What question will including an interaction address?)
+
+
+## Part I: QUESTION 3
+Build a model to investigate the question above:
+1) Which predictors are significant? 
+2) What does this significance mean *biologically*? 
+HOW is larval body mass changing over time (i.e. increasing or decreasing) within each group?
+
+```{r question 3}
+#### YOUR
+#### CODE
+#### GOES
+#### HERE
+```
+
+## Part I: QUESTION 4
+We want to know the average weight of larvae in each replicate of each treatment, over the course of the entire experiment. I.e., we only want *one value* for each of all six possible combinations of replicate and treatment. Also find these values using the glm() and coef() functions, and not via any fancy group_by() %>% summarize() business -- although that can help you check your work. 
+
+Are any replicates significantly different WITHIN a single treatment type? This would mean that the replicates aren't serving their intended purpose... Use the confint() function to investigate.
+
+```{r question 4}
+#### YOUR
+#### CODE
+#### GOES
+#### HERE
+```
+
+## BONUS CODE
+Here are three different ways of making the same graph! Not even getting into the `broom` package...
+
+```{r bonus code}
+model_of_choice <- glm(mass_delta ~ order*treatment, family = gaussian, data = larvae)
+
+ggplot(larvae, aes(x = order, y = predict(model_of_choice), color = treatment)) + 
+  geom_line() + geom_point(color = "black", shape = "diamond") + 
+  # geom_point(aes(y = mass_delta), size = 1, alpha = 0.5) + 
+  ylim(-0.5, 3) + theme_bw() + labs(x = "fortnight", y = "change in mass")
+
+predictors_of_interest <- tibble(treatment = larvae$treatment, 
+                                 order = larvae$order)
+predicted_values <- predictors_of_interest %>%
+  mutate(mean = predict(object = model_of_choice, # this saves predicted values in a column
+                        newdata = predictors_of_interest)) # which can be helpful
+
+ggplot(predicted_values, aes(x = order, y = mean, color = treatment)) +
+  geom_line() + geom_point(color = "black", shape = "diamond") + 
+  # geom_point(data = larvae, aes(y = mass_delta), size = 1, alpha = 0.5) +  
+  ylim(-0.5, 3) + theme_bw() + labs(x = "fortnight", y = "change in mass")
+
+ggplot(larvae, aes(x = order, y = mass_delta, color = treatment)) + 
+  # geom_point(size = 1, alpha = 0.5) + 
+  geom_smooth(method = "glm", alpha = 0.25) + # such a hack (TOO POWERFUL!?!?)
+  ylim(-0.5, 3) + theme_bw() + labs(x = "fortnight", y = "change in mass")
+```
+
+# PART II: firefly pupae
+Larvae were reared under either a standard 12 hrs light/12 hrs dark cycle or a 12 hrs light/12 hrs dLan cycle to determine if this affected the weight of the adults.
+
+Pupation is the 'cocoon' stage between the larval (juvenile) and adult stage
+Eclosion is when the adult emerges from the pupae
+
+container = ID for each of the 2 containers used to replicate the treatments
+treatment = one of two treatments (light/dark vs light/dLAN)
+status = status of individual
+sex = sex of emerged adults; if L, never pupated
+
+*Research question: Does light treatment affect final adult weight??*
+
+```{r read in and wrangle data}
+pupae <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week10_Lab9_Oct23/pupation.csv") %>%
+  mutate(weight_mg = weight*1000, #convert g to mg
+         sex = factor(sex, levels = c("F","M","L"))) %>%
+  filter(is.na(death)) %>% #remove casualties
+  mutate(container = treatment, #copy treatment column
+         treatment = factor(treatment, labels = c("12/12","12/12","dLAN","dLAN")),
+         status = ifelse(sex == "L", "larva", "adult") %>% factor(levels = c("larva","adult")),
+         start = lubridate::mdy(start),
+         pupation = lubridate::mdy(pupation),
+         metamorphosis = lubridate::mdy(metamorphosis),
+         days_to_pupate = pupation - start,
+         days_to_eclose = metamorphosis - pupation) %>%
+  select(container, treatment, status, sex, weight_mg,
+         days_to_pupate, days_to_eclose, pupation, metamorphosis)
+
+pupae
+summary(pupae)
+summary(pupae %>% mutate_if(is.character, as.factor))
+unique(paste(pupae$container, pupae$treatment))
+
+ggplot(pupae, aes(x = sex, y = weight_mg, fill = treatment)) + 
+  geom_boxplot(width = 0.5, 
+               outlier.shape = NA, 
+               color = "black", 
+               alpha = 0.75) +
+  geom_jitter(color = "firebrick1", 
+              height = 0.15,
+              width = 0.15,
+              size = 1.25) + 
+  scale_fill_manual(values = c("#666666","#b2b2ff"), name = "") +
+  scale_x_discrete(labels = c("Female imago", "Male imago", "Unsexed larva")) +
+  ylim(20,100) + labs(x = "", y = "Weight (mg)") + theme_bw()
+```
+
+## Part II: QUESTION 1
+Make a histogram that visualizes the distribution of body masses (`weight_mg`).
+Do these data fit a normal distribution? Justify your answer using first principles.
+
+```{r question 1}
+#### YOUR
+#### CODE
+#### GOES
+#### HERE
+```
+
+## Part II: QUESTION 2
+Check out the variables included in the data set, and compose a series of models to that you could defend as being reasonable explanations of the observed distribution of adult body mass data. Feel free to go crazy with interactions, as long as you feel confident that you could explain significant results.
+
+Compete these models and write a summary statement that explains the statistical significance of each of the predictors in the winning model.
+
+```{r question 2}
+#### YOUR
+#### CODE
+#### GOES
+#### HERE
+```

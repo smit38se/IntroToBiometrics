@@ -1,0 +1,492 @@
+---
+title: "BIO-456/556 lab 11"
+author: "Lee Brown"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r libraries, message=FALSE}
+library(tidyverse)
+library(ggthemes)   # extra ggplot themes!
+library(bbmle)      # for ICtab()
+library(MASS)       # for glm.nb()
+library(car)        # for Anova()
+library(lme4)       # for lmer() and glmer() for running mixed models
+library(emmeans)    # for multiple comparisons! 
+
+#Light treatment affects firefly flashing activity, but how do we know which levels of the predictor, color, have the most impact? Multiple comparisons allows us to get the significance between levels of a factors (e.g., amber light vs yellow)
+
+library(conflicted)
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("summarize", "dplyr")
+theme_set(theme_bw()) #if you have a fondness for a certain theme in ggplot, you can set it ahead of time here!
+```
+
+# REVIEW: firefly larvae
+
+```{r read in and wrangle data}
+larvae <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week10_Lab9_Oct23/larval_growth.csv") %>%
+  rename(fortnight_1 = `9/10/18`,
+         fortnight_2 = `9/24/18`,
+         fortnight_3 = `10/8/18`,
+         fortnight_4 = `10/22/18`,
+         fortnight_5 = `11/5/18`,
+         fortnight_6 = `11/19/18`,
+         fortnight_7 = `12/3/18`,
+         fortnight_8 = `12/17/18`) %>%
+  pivot_longer(fortnight_1:fortnight_8,
+               names_to = "fortnight", 
+               values_to = "mass") %>%
+  mutate(container = treatment, # make a copy of explicit treatment data
+         replicate = rep(c("first", "second"), 3, each = 32),
+         treatment = treatment %>% # consolidate treatment data into three levels
+           factor(labels = c("12/12", "12/12","dLAN", "dLAN","dark", "dark")) %>%
+           factor(levels = c("12/12", "dark", "dLAN")),
+         baseline = rep(mass[fortnight == "fortnight_1"], each = 8),
+         mass_delta = (mass - baseline)/baseline,
+         order = substr(fortnight, 11, 11) %>% as.numeric() - 1)
+
+unique(larvae$larval_ID) %>% length() #24 larvae growing over the course of about 3 mos; each was put into a container for a total of 6 containers, and each container was assigned to one of 3 treatments (12/12 day/light, completely darkness, 12/dim light)
+
+table(larvae[,c(1,6)]) #32 rows of data = 8 rows of data per larva across 4 larvae
+dim(larvae) #192 = 32 * 6
+table(larvae[,c(1,5)]) #each treatment had 2 unique containers
+table(larvae[,c(1,5,6)])
+```
+
+Make a histogram that visualizes the distribution of relative growth rates (`mass_delta`).
+Do these data fit a normal distribution? Justify your answer using first principles.
+
+```{r last lab question 1}
+ggplot(larvae, aes(x = mass_delta, fill = treatment)) + 
+  geom_histogram(binwidth = 0.5, color = "black", size = 0.25) + 
+  scale_fill_manual(name = "", values = c("gray45", "gray15", "#b2b2ff")) +
+  # scale_x_continuous(labels = function(x) paste0((1+x)*100, "%")) +
+  labs(x = "relative growth rate")
+
+# Note some values < 0
+# Mass delta values are continuous numbers (not discrete)
+# Are the data skewed? Yes, a bit, but we have some values < 0 so can't use log-normal, so normal is the "best" for now -- DON'T DO THINGS LIKE TESTING FOR NORMALITY USING A SHAPIRO-WILKES TEST because tests we use are pretty robust to variation in a normal distribution. For GLMs, just find the best distribution among those available
+```
+
+I want to know if exposure to `dLAN` significantly impacted the growth of larvae in that group, 
+when compared to the growth of larvae in either of the control groups (`12/12` and `dark`).
+
+If I want to build a fully-factorial model, should I include an effect of 'fortnight' or 'order'? What's the difference between the two?
+
+Should I include an *interaction* between treatment and one of these measures of time? Why or why not...?
+
+```{r last lab question 2}
+larvae
+
+ggplot(larvae, aes(x = fortnight, 
+                   y = mass_delta, 
+                   group = treatment, 
+                   color = treatment)) + 
+  stat_summary(geom = "line", fun = mean, size = 1) + 
+  stat_summary(geom = "line", fun = mean, size = 1, 
+               aes(linetype = treatment), color = "gray95") + 
+  scale_linetype_manual(guide = F, name = "", values = c("dashed", "blank", "dashed")) +
+  stat_summary(geom = "errorbar", fun.data = mean_cl_boot, # 95% CI using bootstrap method
+               width = 0, size = 0.75, position = position_dodge(0.15)) +
+  scale_color_manual(name = "", values = c("gray45", "black", "#b2b2ff")) +
+  scale_y_continuous(labels = function(x) paste0((1+x)*100, "%")) +
+  scale_x_discrete(labels = c("week 0","week 2","week 4","week 6",
+                              "week 8","week 10","week 12","week 14")) +
+  labs(x = "", y = "relative growth rate") + 
+  theme_bw() + theme(plot.background = element_rect(fill = "white"),
+                     panel.background = element_rect(fill = "white"),
+                     panel.grid.minor = element_blank(),
+                     panel.grid.major = element_line(size = 0.25, 
+                                                     linetype = "solid",
+                                                     colour = "gray95"),
+                     strip.background = element_rect(color="white", fill="white"),
+                     legend.position="top")
+
+# We want to use a model to describe what we see in the raw data and determine if the differences we see are statistically significant or not
+
+#Pull up the dataset and look at the 'fortnight' and 'order' columns: fortnights is character data which will be a factor in a model, whereas order is numeric from 0-7
+# If we use 'fortnight' as a predictor, the model will estimate a different mean for each of the 8 timepoints (i.e., the mean for each group), but we won't have much of a sense of the linear relationship between the weeks
+# If we use order as a predictor, the model will estimate a best fit line through the data since it is a continuous predictor
+# 'fortnight' vs 'order' is the difference multiple df (estimating a value for each of 8 fortnights vs a single value for the continuous change in time)
+
+# With no interaction, we're summarizing each relationship for 12/12, dark/dark and dLAN with a single line; Adding an interaction allows slope to vary with treatment
+
+# adding the intercept allows slope to vary by treatment
+# just eyeballing the data, it looks like the slope differ among treatments
+```
+
+Build a model to investigate this question, and report:
+1) which predictors are significant
+2) what that significance means in human words, i.e., HOW is larval body mass changing over time (increasing or decreasing) within each group?
+
+```{r last lab question 3}
+m0 <- glm(mass_delta ~ fortnight*treatment, family = gaussian, data = larvae)
+m1 <- glm(mass_delta ~ order*treatment, family = gaussian, data = larvae)
+ICtab(m0, m1, base = T, weights = T)
+Anova(m1)
+coef(m1)
+
+# Could also run as: 
+# m0 <- lm(mass_delta ~ fortnight*treatment, data = larvae)
+# m1 <- lm(mass_delta ~ order*treatment, data = larvae)
+
+# Run means parameterization to get the means of each group
+m2 <- glm(mass_delta ~ -1 + order:treatment, family = gaussian, data = larvae)
+coef(m2) # these are consistent with what we see in our figure above
+confint(m2)
+```
+
+Do the replicates within each treatment differ? They should NOT. Test this: 
+
+I want to know the average weight of larvae in replicate of each treatment, over the course of the entire experiment. That is to say, I only want *one value* for each of all six possible combinations of replicate and treatment (3 treatments x 2 replicates per treatment). Are any replicates significantly different WITHIN a single treatment type? This would mean that the replicates aren't exactly working as we would hope... Use the confint() function to investigate.
+
+```{r last lab question 4}
+# address this question using our 'growth rate' estimate
+m5 <- glm(mass_delta ~ -1 + replicate:treatment, family = gaussian, data = larvae)
+coef(m5)
+confint(m5)
+
+# using average weight
+m6 <- glm(mass ~ -1 + replicate:treatment, family = gaussian, data = larvae)
+coef(m6)
+confint(m6) # replicates differed within this treatment, possible due to one really fat larva in the second replicate of the dLAN treatment
+```
+
+# Introducing the 'mixed model'
+
+Revisualize above experiment with mass instead of change in mass as the response variable
+
+```{r Revisualizing data from last lab}
+# Re-visualize the above data with mass instead of mass_delta as the response
+ggplot(larvae, aes(x = fortnight, 
+                   y = mass, 
+                   group = treatment, 
+                   color = treatment)) + 
+  stat_summary(geom = "line", fun = mean, size = 1) + 
+  stat_summary(geom = "line", fun = mean, size = 1, 
+               aes(linetype = treatment), color = "gray95") + 
+  scale_linetype_manual(guide = F, name = "", values = c("dashed", "blank", "dashed")) +
+  stat_summary(geom = "errorbar", fun.data = mean_cl_boot, # 95% CI using bootstrap method
+               width = 0, size = 0.75, position = position_dodge(0.15)) +
+  scale_color_manual(name = "", values = c("gray45", "black", "#b2b2ff")) +
+  #scale_y_continuous(labels = function(x) paste0((1+x)*100, "%")) +
+  scale_x_discrete(labels = c("week 0","week 2","week 4","week 6",
+                              "week 8","week 10","week 12","week 14")) +
+  labs(x = "", y = "mass (mg)") + 
+  theme_bw() + theme(plot.background = element_rect(fill = "white"),
+                     panel.background = element_rect(fill = "white"),
+                     panel.grid.minor = element_blank(),
+                     panel.grid.major = element_line(size = 0.25, 
+                                                     linetype = "solid",
+                                                     colour = "gray95"),
+                     strip.background = element_rect(color="white", fill="white"),
+                     legend.position="top")
+```
+
+Note 2 things:
+1) the different groups are starting at very different masses
+2) One larvae in the dLAN group was very large!
+
+We don't want the very large (or small) masses of certain larvae to be pulling the overall too far in one direction or the other!
+
+Two options: 
+1) Add effect of individual larvae
+2) Add random effect of larva where the intercept differs by larva but the slopes for the change in mass over time are the same
+
+
+```{r Introducing the 'mixed model'!}
+
+# Option 1: Not a mixed model
+m3 <- glm(mass ~ order*treatment + larval_ID, data = larvae)          # larval_ID as a fixed effect
+
+Anova(m3) # Output looks funky because larval_ID is nested within treatment, each individual larva only belongs to a single treatment -- a model where mass is predicted by larval_ID is nested within a model where mass is predicted by treatment; we're essentially being redundant including larval ID and treatment in the same model; also, larval_ID predicts how much a larva weights?? Not a good model
+
+m3b <- glm(mass ~ order + order:treatment + larval_ID, data = larvae)   # could try to remove treatment as fixed effect but it's not really a sensible model
+Anova(m3b) 
+
+#if these data for mass are log-normally distributed, use family = gaussian(link = "log")
+
+# Option 2: Introducing... the mixed model!
+# Account for repeated measures among individuals over time by including larval_ID as a random effects
+m4 <- lmer(mass ~ order*treatment + (1|larval_ID), data = larvae)     # larval_ID as a random effect; intercepts vary randomly around the mean; growth over time (slope) is the same across larvae
+m4.bonus <- lmer(mass ~ order*treatment + (order|larval_ID), data = larvae) # each individual larvae has its own intercept: larval_ID as a random intercept and order as a random slope (i.e., slopes aka the growth rates differ by order)
+
+ICtab(m3, m3b, m4, m4.bonus, base = T, weights = T)
+# Recall m3 IS NOT A GOOD MODEL; mass data points are not independent AND we can't include larval_ID as the fixed effect here
+
+Anova(m4)         # growing at same rate, started at different sizes
+Anova(m4.bonus)   # growing at different rate, started at different sizes
+
+summary(m4.bonus) # check out the variance for the random effect -- a lot of variation in the starting masses
+
+# In this example we have 24 different larvae
+# This is good because ideally we want at least 4 or 5 levels in our random effects terms, or they won't really work! 
+# Think about calculating variance: you can *technically* calculate a variance w/ two numbers, but you can't really calculate a reliable estimate of variance until you have > 3 values
+```
+
+# More mixed models: bunny abundance
+
+Dataset on count of bunnies across multiple locations over time
+
+```{r example bunny data, message=FALSE}
+bun <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week11_Oct30/hares.csv") %>%
+  mutate(count = count1 + count2,
+         year.0 = year - min(year),
+         year.s = scale(year)) %>% # rescale variable!
+  select(region, site2, area, elevation, landuse, 
+         year, year.0, year.s, count) %>% na.omit()
+
+bun
+summary(bun)
+summary(bun %>% mutate_if(is.character, as.factor))
+
+#look at region and site columns to see number of sites per region and number of observations per site
+table(bun[,1:2])
+
+#We really should account for the structure in these data!!
+
+#fit a different line to each region using geom_smooth()
+ggplot(bun, aes(x = year, color = region, y = count)) + 
+  geom_smooth(method = "glm", method.args = list(family = "poisson"), alpha = 0.25) +
+  geom_point(alpha = 0.25) 
+#average slope of all of these lines is probably basically flat... including an interaction would allow the slope to differ by region
+
+# But don't try to recreate your model using geom_smooth unless you know exactly what it's giving you...
+# CASE IN POINT: fit a different line to each region but with smaller y-axis
+ggplot(bun, aes(x = year, color = region, y = count)) + 
+  geom_smooth(method = "glm", method.args = list(family = "poisson"), alpha = 0.25) +
+  geom_point(alpha = 0.25) + ylim(0, 200)
+
+# Changing the y-limits actually removes those points from the data!! Not good...
+```
+
+Does the number of rabbits counted differ by year or region?
+Include an offset because the number of rabbits may differ based on area surveyed
+```{r example bunny code, message = FALSE}
+
+#From raw data, looks like there could be an interaction between regions and year, so run a Poisson glm with an interaction between region and year
+b1 <- glm(count ~ region*year, offset = log(area), family = poisson, data = bun)
+
+Anova(b1) # No effect of year -- slopes all cancel each other out
+# yes, there is a significant interaction
+
+# We haven't accounted for the different sites within each region
+# Add a random effect because number of bunnies differs by site
+b2 <- glmer(count ~ region*year + (1|site2), offset = log(area), family = poisson, data = bun)  
+
+# UH-OH
+# Model is nearly unidentifiable: 
+# very large eigenvalue
+#  - Rescale variables?
+
+range(bun$year) # goes from 1992-2008; centered around 2000
+unique(bun$region) # with dummy variables, goes from 1-6; centered around 3
+unique(bun$site2) # centered around 6 
+
+# Rescale so the different predictors are centered around a similar value
+# I actually already rescaled when I read in the data :)
+
+ggplot(bun, aes(x = year.s, color = region, y = count)) + 
+  geom_smooth(method = "glm", method.args = list(family = "poisson"), alpha = 0.25) +
+  geom_point(alpha = 0.25) 
+#Note the years are not centered around zero
+
+b1b <- glm(count ~ region*year.s, offset = log(area), family = poisson, data = bun)
+Anova(b1b) #model with rescaled values -> same as table from Anova(b1)!!
+
+b2 <- glmer(count ~ region*year.s + (1|site2), offset = log(area), family = poisson, data = bun)  
+Anova(b2) #accounting for variation among sites removes effect of region
+
+ICtab(b1, b2, base = T, weights = T)
+
+# Add a random slope of year
+b3 <- glmer(count ~ region*year.s + (year.s|site2), offset = log(area), family = poisson, data = bun)
+
+ICtab(b1, b2, b3, base = T, weights = T)
+
+Anova(b3) #overall, region still has an impact
+```
+# LAB EXERCISES
+
+# PART I: sleep deprivation
+
+The `sleepstudy` tibble comes with the package `lme4`. Let's check it out!
+
+Courtesy of the Help tab: The average reaction time per day for subjects in a sleep deprivation study. On day 0 the subjects had their normal amount of sleep. Starting that night they were restricted to 3 hours of sleep per night. The observations represent the average reaction time on a series of tests given each day to each subject.
+
+Test your own reaction time here: https://humanbenchmark.com/tests/reactiontime
+
+Construct a ggplot to help yourself visualize the results of this study.
+
+```{r part 1 - question 1}
+sleepstudy
+?sleepstudy
+summary(sleepstudy)
+table(sleepstudy$Subject)
+
+### YOUR
+### CODE
+### GOES
+### HERE
+
+```
+
+Does reaction time get significantly slower with increased sleep deprivation? 
+Build two models to test this question:
+1) In the first model, use only fixed effects. 
+2) In the second model, replace one of the fixed effects with an equivalent random effect. 
+
+Which model does a better job of describing the data, if you just look at AIC?
+
+```{r part 1 - question 2}
+
+### YOUR
+### CODE
+### GOES
+### HERE
+```
+
+Which model should we use to answer our research question? Run Anova() on this 'best' model and summarize your results in plain English.
+
+```{r part 1 - question 3}
+
+### YOUR
+### CODE
+### GOES
+### HERE
+
+# Same number of observations for each Subject
+# If we ignore the structure in our data, we'll have the same coefficients, BUT we might have different confidence intervals! #Check it out for your models!! (i.e., calculate means and CIs for the GLM vs GLMM)
+```
+
+# PART II: pollinator party
+
+Jessie, Chris, and someone else(?) observed pollinators that visited flowers in three different greenhouses. Each flower belonged to a plot that had either been fertilized or left to grow without any help. Each plot had been given a low, medium, or high rain treatment, which may also have affected the allure of the flowers to pollinators.
+
+```{r part 2 - read in and look at data}
+visitors <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week11_Oct30/goldenrod.csv") %>%
+  select(date, time, observer, plot, greenhouse, rain, fertilizer, 
+         abundance = spikes, bumble_bee, honey_bee, sweat_bee, wasp, fly, beetle) %>%
+  pivot_longer(bumble_bee:beetle, names_to = "species", values_to = "visits") %>%
+  mutate(date = mdy(date), 
+         rain = rain %>% factor(levels = c("L","M","H"), 
+                                labels = c("low", "medium", "high")),
+         fertilizer = fertilizer %>% factor(labels = c("fertilized", "unfertilized"))) 
+
+visitors
+summary(visitors)
+summary(visitors %>% mutate_if(is.character,as.factor))
+
+table(visitors[,4:5]) # 3 rain treatments and 2 fertilizer treatments repeated across 3 greenhouses
+table(visitors[,3:4]) # 3 observers with different counts across the greenhouses and treatments
+
+```
+
+Pick a species of interest and `filter()` the dataset below for only those observations. Summarize the data for that species with a ggplot that assigns the *interaction* between `rain` and `fertilizer` variables to the x-axis.
+
+```{r part 2 - filter and visualize data}
+
+### YOUR
+### CODE
+### GOES
+### HERE
+
+#Hint: Use ggplot(data, aes(x = interaction(x,y), y = visits))...
+```
+
+Build a NON-MIXED model to investigate the effects of `date`, `greenhouse`, `rain`, and `fertilizer` on the number of visits by YOUR species. Include an interaction between at least two predictors of interest that you can reasonably assume might have an interaction. 
+HINT: You might want to start by constructing a histogram to visualize the distribution of data in the `visits` column!
+
+```{r part 2 - question 1}
+
+### YOUR
+### CODE
+### GOES
+### HERE
+
+```
+
+Think about which predictors we're *really* interested in in these data (fixed effects) vs things that are adding structure to our data but in which we're not really otherwise interested. Make a list!
+
+Come up with a hypothesis, then take the predictors that are NOT integral to your hypothesis and change them into random effects in an equivalent mixed model. Compete your winning mixed and non-mixed models. Does the mixed model do a better job at describing these data? 
+
+```{r question 2}
+
+### YOUR
+### CODE
+### GOES
+### HERE
+
+# BONUS CODE: try out the following to get p-values for pairwise comparisons so you can determine which rain treatments are driving the results
+# emmeans(<<YOUR WINNING MODEL>>, ~ rain | fertilizer,type = "response")
+# contrast(emmeans(<<YOUR WINNING MODEL>>, ~ rain | fertilizer), method = "pairwise", type = "response")
+# contrast(emmeans(<<YOUR WINNING MODEL>>, ~ fertilizer | rain), method = "pairwise", type = "response")
+```
+
+## question 3
+
+Write up your results in plain English, including exactly which model / distribution you decided on, which variables you included as fixed and random effects, and the test statistics and p-values that you obtained. 
+
+# BONUS EXERCISE: bumble bee party
+
+Here is more in-depth data on bumble bee visits to flowers, in a separate (but related) experiment! I've done some preliminary coding for you, but not anything else -- try running each chunk and thinking about the results. Ask me if you have any questions on how to interpret what you get!
+
+```{r read in and wrangle data, message=FALSE}
+wrangle <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week11_Oct30/humblebees.csv") %>%
+  pivot_longer(flowers_F:flowers_U, names_to = "fertilizer", values_to = "abundance") %>%
+  mutate(fertilizer = fertilizer %>% factor(labels = c("fertilized", "unfertilized"))) %>%
+  group_by(date, time, observer, plot, greenhouse, fertilizer) %>%
+  summarize(abundance = mean(abundance))
+
+bumbles <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week11_Oct30/humblebees.csv") %>%
+  select(date, time, observer, plot, greenhouse, rain, no_F_visited, no_U_visited) %>%
+  pivot_longer(no_F_visited:no_U_visited, names_to = "fertilizer", values_to = "visits") %>%
+  mutate(fertilizer = fertilizer %>% factor(labels = c("fertilized", "unfertilized"))) %>%
+  right_join(wrangle) %>%
+  mutate(date = mdy(date), 
+         rain = rain %>% factor(levels = c("L","M","H"), 
+                                labels = c("low", "medium", "high"))) 
+bumbles
+
+table(bumbles[,3:4])
+```
+
+Build a NON-MIXED model to investigate the effects of date, greenhouse, rain, and fertilization on number of visits.
+
+```{r bonus - part 1}
+ggplot(bumbles, aes(x = visits)) + geom_histogram()
+
+# without an offset
+n1 <- glm(visits ~ date + greenhouse + rain*fertilizer, family = poisson, data = bumbles)
+n2 <- glm.nb(visits ~ date + greenhouse + rain*fertilizer, data = bumbles)
+ICtab(n1, n2, base = T, weights = T)
+Anova(n2)
+
+# with an offset
+o1 <- glm(visits ~ date + greenhouse + rain*fertilizer, offset = log(abundance), family = poisson, data = bumbles)
+o2 <- glm.nb(visits ~ date + greenhouse + rain*fertilizer + offset(log(abundance)), data = bumbles)
+ICtab(o1, o2, base = T, weights = T)
+Anova(o2)
+```
+
+Come up with a hypothesis, then take the predictors that are NOT integral to that hypothesis and change them into random effects in an equivalent mixed model. Compete your winning models from part 1 and part 2. Does the mixed model do a better job at describing these data? 
+
+```{r bonus - part 2}
+# without an offset
+n3 <- glmer(visits ~ rain*fertilizer + greenhouse + (1|date), family = poisson, data = bumbles)
+n4 <- glmer.nb(visits ~ rain*fertilizer + greenhouse + (1|date), data = bumbles)
+ICtab(n1, n2, n3, n4, base = T, weights = T)
+Anova(n4)
+
+contrast(emmeans(n4, ~ rain | fertilizer), method = "pairwise", type = "response")
+contrast(emmeans(n4, ~ fertilizer | rain), method = "pairwise", type = "response")
+
+# with an offset
+o3 <- glmer(visits ~ rain*fertilizer + greenhouse + (1|date) + offset(log(abundance)), family = poisson, data = bumbles)
+o4 <- glmer.nb(visits ~ rain*fertilizer + greenhouse + (1|date) + offset(log(abundance)), data = bumbles)
+ICtab(o1, o2, o3, o4, , base = T, weights = T)
+Anova(o4)
+```

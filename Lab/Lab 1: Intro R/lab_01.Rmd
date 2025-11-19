@@ -1,0 +1,543 @@
+---
+title: "BIO456/BIO556 Lab 01"
+author: "Dr. Leone M. Brown"
+date: "25 August 2025"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+mainfont: Arial
+---
+
+Welcome to the BIO 456/556 lab! Today we will get an introduction to RStudio and R Notebooks, and then learn a few basic coding skills that you will use for the rest of the semester.
+
+We will cover:
+1. File structures and directories
+2. The RStudio layout
+3. Anatomy of an R Notebook
+4. How and why to install packages
+5. Some basic R commands and functions
+
+# An introduction to coding in R
+
+### Did you know you can insert images into your RMarkdown notebook?
+1) Download the 'anatomyofRstudio.png' from Canvas --> Files --> Labs --> Lab 1
+2) Put the image in an appropriate folder on your computer (consider the structure of Files within your computer)
+3) Get the "path" of the file. One way to do this is to navigate to the file and:
+Right-click --> Get Info --> Copy the "path" under 'Where' (mac)
+0R
+Right-click --> Properties --> Copy the "path" in the bar at the top of the window (PC)
+4) Paste the "path" within the 'parentheses' below where I have typed /Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab1/anatomyofRstudio.png
+5) At the end of the 'path', type the name of the file, here: anatomyofRstudio.png
+
+IMPORTANT NOTE!: PC users need to change the "\" symbols to a "/" throughout the path
+
+![the RStudio console R](/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab1/anatomyofRstudio.png)
+
+Did it work? Can you see the image above??
+
+### Explore the different RStudio windows
+Move the Console windows around if you'd like!
+View --> Panes
+
+### Change the RStudio color options
+Tools --> Global Options --> Appearance
+
+### Wrap text! DO THIS!!!!!
+Code --> Soft Wrap Long Lines
+
+### You can also insert special symbols. See the 'Lecture review' below
+
+# Lecture review: Probability
+(And fun with R Notebooks -- they can contain more than just R code!)
+
+**event**: something that does or does not occur
+per **trial**: observation, specimen, “experiment”
+	
+**probability**:
+
+P(A): probability event A occurs
+N: total number of trials
+$N_A$: total number of trials in which A occurs
+
+probability of A, provided N is sufficiently large
+$$P(A) = \lim_{x\to\infty} (\frac{N_A}{N})$$
+
+probability of A or B (when events are mutually exclusive)
+$$P(A\cup B) = P(A)+P(B)$$
+
+probability of A and B (when events are fully independent)
+$$P(A\cap B) = P(A)\times P(B)$$
+
+probability of B given A has occurred
+$$P(B|A) = \frac{P(A\cap B)}{P(A)}$$
+
+# Using R as a calculator
+Explore the different ways of computing in R, below.
+The grey "chunks" are where you insert code that you wish to send to the Console to "run". 
+
+Also, look at the bottom left of this 'script' window. Note that text that follows a hashtag (or more than one hashtag) in the white space of the RMarkdown notebooks is included in the notebook 'Table of Contents' at the bottom left of this window.
+
+The text in grey below is a 'code chunk'. At the top of each 'chunk' you will see ```{r} which indicates that R is the coding language being used in the chunk. You can organize your code chunks by giving them names or labels after the "r" within the curly brackets. These labels specific to each chunk ID also appear in the 'Table of contents' -- check it out!
+
+```{r calculations}
+# Use a hashtag to make comments in your code. Anything to the right of the hashtag will not be run in the Console
+
+# Run all lines of code in a chunk by pressing the green ▶ in the upper right corner
+# To run a single line of code, put your cursor on that line & use the shortcut:
+# command + enter (Mac)
+# ctrl + enter (PC)
+
+1+1       # addition: +
+100-1000  # subtraction: -
+3*2/6^2   # multiplication: *
+(3*2/6)^2 # division: /
+
+#R follows a specific order of operations for computations
+# Order of operations: 
+# 1) parentheses: ()  
+# 2) exponents: ^
+# 3) multiplication & division (from left to right) 
+# 4) addition & subtraction (from left to right)
+
+#Note the output in the Console versus in the white space below the chunk when you (1) run a single line of code at a time within the chunk, versus (2) run all lines of code at once by pressing the green ▶ in the upper right corner
+```
+
+# Objects or Data Structures -- Variables
+
+In the chunk below, we assign values to different variables
+```{r variables}
+x <- 25 # variable assignment (check out the Environment tab to see if there is now an "x"!)
+y = -2 # You can use "=" instead of "<-" to assign values to variables
+y <- -4 # This line of code is the same as the line of code above it
+z <- "Zoom University" #Use quotations to assign a string of words or characters
+z <- "a b c d"
+
+length(z) # What does the length() command do?
+
+# To make the assignment operator '<-' quickly, use a shortcut:
+# 'option' + '-' (Mac)
+#  alt + shift + K (PC)
+# But is it really any shorter???
+```
+
+# Functions
+
+Function in R are commands that execute a specific task or... FUNCTION!
+```{r functions}
+abs(x/y) # absolute value of x divided by y 
+# This above line of code will only work if you have already assigned values to the variables x and y. If not, you will receive the error, "Error: object 'x' not found"
+
+y^3*sqrt(x) # y cubed times the square root of x (recall the order of operations)
+
+exp(x) # how R denotes e to the xth power
+log(x) # this is he natural log!!! 'ln()' throws an error
+exp(log(1337)) # the exp() and log() functions cancel each other out
+
+log(-x*y) # Recall: use '*' to perform multiplication
+log(x) + log(-y) # Recall from some previous math class: log(A*B) == log(A) + log(B), so this line of code should yield the same output as the above line of code
+
+# Today in lecture you will be reminded about rules of working with logs!
+
+log(abs(x/y)) # Recall: use '/' to perform division
+log(abs(x)) - log(abs(y)) # Recall from some previous math class: log(A/B) == log(A) - log(B), so this line of code should yield the same output as the above line of code
+
+log(x^y) # use '^' to put something to the nth power
+y*log(x) # log(A^B) == B*log(A)
+# Another long forgotten (?) rule of working with logs!
+```
+
+# Objects or data structures - Vectors
+
+A vector is a one-dimensional sequence of elements. 
+All elements within a vector much be the same data type (or R will make them the same for you!)
+```{r vectors}
+z #look at the object named 'z' (in the Console or below this code chunk)
+length(z) # What is the length of z?
+
+z <-"a","b","c","d" # Why am I getting an error?? Note: R will not run the entire chunk when there is an error
+
+z <- c("a","b","c","d") # Oh, I was getting an error above because I wasn't speaking R's language... To create a vector, we place the items or elements we wish to include in the vector into the c() function
+
+z # Is the output for this line of code what you expected it to be? If not, why?
+
+# Before you run the line of code below, guess what the output in the Console (or in the white space below the chunk) will be...
+length(z) # Did you guess correctly? Why or why not?
+
+class(z) # This tells us the type of data within the assigned variable or vector
+
+z2 <- c("1","2","3","4")
+
+# Before you run the lines of code below, guess what the output in the Console (or in the white space below the chunk) will be...
+length(z2) # Did you guess correctly? If not, do you understand why the output differed from your guess?
+class(z2) # Did you guess correctly?
+
+z3 <- c(1,2,3,4) # What is this line of code doing? What information does "z3" contain?
+length(z3) # Did you guess correctly? If not, do you understand why the output differed from your guess?
+
+class(z3) # Was the output for this line of code what you expected? Do you understand why the output is what it is?
+
+# We can also give our vectors or variables fancier names. Let's pretend we have 6 snakes.
+
+# Our snakes' lengths are:
+snake_cm <- c(24, 78, 144, 15, 104, 55) # concatenate different integers together
+snake_m <- snake_cm/100 # easily perform an operation on every value in the vector
+
+# Our snakes' names are:
+snake_names <- c("Spaghetto", "Charlie", "Pinto", "Tugboat", "Violet", "Cervantes")
+
+# Can you put numbers and letters together in a vector??? What do you think? (PS, I told you in the text right before this code chunk!)
+snake_namesTEST <- c("Spaghetto", "Charlie", "Pinto", "Tugboat", "Violet", 12)
+
+# What do you exact the output of the line of code below to be? "character" or "numeric" or both? Why?
+class(snake_namesTEST) # Were you correct about the expected output?
+
+snake_cm     # If you want to actually SEE the information contained in the vector you just made, you have to 'call' it
+snake_m      # Five lines of code above, you assigned the values to this variable name, but didn't call it -- is the output what you expected?
+
+log(snake_m) # Perform the log() function on each item within the 'snake_m' vector
+
+snake_names # Which snakes are greater than 1 meter long?
+```
+
+# Packages in R
+
+When using R, we need to make sure to have any necessary packages installed. Packages are collections of functions that all related to some given theme. 
+
+The 'tidyverse' package includes several packages that we will often use at once for cleaning, manipulating and visualizing data. If you have an older computer, you may wish to install packages individually rather than all at once.
+
+Before you can use a package, you need to install it. You only need to install packages once, at least until you wish to 'update' them. 
+Below, remove the "#" to run the line of code to install the 'tidyverse' package all at once OR packages within the 'tidyverse' individually. 
+Once you have installed the packages, replace the "#" in front of the install.packages() function because you do not need to re-install (unless you update your version of R)!
+
+```{r packages}
+#install.packages("tidyverse") # whole universe of packages, might be hard to download
+
+# You can also install individual packages within the tidyverse as needed
+#install.packages("dplyr") # if so, you can just download this one
+#install.packages("ggplot2") # if so, you can just download this one
+#install.packages("tidyr") # and this one, what we'll be using today
+#install.packages("readr") # and this one, what we'll be using today
+```
+
+Packages are like cookbooks. They have lots of great recipes (functions) in them, but we can't access the recipes if we don't open the book! 
+```{r}
+library(tidyverse) # Use the library() function to open a package
+# In the above line of code, all the 'tidyverse' packages are opened all at once. Check out this link to see what packages are included https://www.tidyverse.org/packages/
+
+# Or you can open the packages individually (and not overwhelm your computer if it is older). Recall, delete the hashtag in front of the function to run the lines of code below.
+#library(dplyr)
+#library(tidyr)
+#library(readr)
+#library(ggplot2) 
+```
+
+# Exploring 'help' functions and the 'pipe'
+
+In the tidyverse packages, we often use something called a 'pipe'. This is neither a smoking apparatus nor a tube used for plumbing. Explore the 'pipe' below.
+```{r exploring help and the pipe}
+test_sequence <- seq(1, 10, length.out = 5) # what does 'length.out =' do? 
+
+# Use the help() function or a question mark in front of a function name to get started on understanding R gibberish! Use the Help to understand what 'length.out =' does.
+help(seq)
+?seq
+
+# Fear not! The more you use the 'Help' for different functions, the more familiar you will become with R's odd 'Help' syntax
+
+# Below we will overwrite previous assignment (above)
+test_sequence <- seq(from = -9, to = 66, by = 3) # What does 'by =' do?
+# If you wish, use the Help to help you understand what 'by =' does.
+
+mean(test_sequence) # What is this output?
+test_sequence %>% mean() # C'est une pipe! 
+
+# Note above two lines of code yield the same ouput. 
+# In the first, we are telling R to find the mean of the values within 'test_sequence'. # # In the second, we are telling R to take the vector 'test_sequence' and "put it into" the mean function.
+
+# You need to know how to make a pipe! 
+# command + shift + M (mac)
+# ctrl + shift + M (pc)
+# But I always just type it out!
+
+a<-abs(test_sequence)
+b<-sum(a)
+log(b)
+
+# Note the two lines of code below. These are meant to illustrate the utility of the 'pipe'
+
+# With the standard or traditional way of writing code in R, it can be is easy to lose track of parentheses and functions when we need to fun a lot of functions within functions within functions:
+exp(sqrt(log(sum(abs(test_sequence))))) # RStudio makes it easier by giving you notice (a red circle with a white 'x') if you are missing parentheses!
+
+# Insert the missing parentheses in the line of code below. This has to be fixed or the rest of the lines of code in this chunk will not work! 
+exp(sqrt(log(sum(abs(test_sequence))
+
+# Using pipes, we have a much more readable line of code that gives us the same output as the line of code above but makes it more obvious the functions being applied and their order:
+test_sequence %>% abs() %>% sum() %>% log() %>% sqrt() %>% exp() 
+
+max(snake_m) # Note the output of this line of code is the same as the one below
+snake_m %>% max() # maximum value
+
+min(snake_m) # Note the output of this line of code is the same as the one below
+snake_m %>% min() # minimum value
+
+snake_names %>% max() # Why is the output here "Violet"?
+snake_names %>% min() # Why is the output here "Cervantes"?
+
+#Coding is a lot like solving puzzles!!
+```
+
+# Indices within vectors (and dataframes or tibbles, see below for clarification) 
+
+The 'index' is the location of an item within an object (or 'data structure') in R. In the examples below, the object to which we are referring is our vector called 'snake_names'. We use brackets to ask R to tell us what value is found within the vector in the location specified within the bracket. 
+
+```{r indexing}
+snake_names[1]   # First place in the vector
+snake_names[4:6] # Fourth to sixth place in the vector
+snake_names[7]   # Seventh place in the vector. Why does R return 'NA'?? 
+snake_names[7] <- "Blue Jeans" # but we can put something in the 'seventh place'
+snake_names[7]   # And now there is something there, R no longer returns 'NA'!
+
+snake_names
+```
+
+# Objects or data structures - Dataframes and Tibbles
+
+* In addition to 'variables' -- objects containing individual values
+* And one-dimensional 'vectors' -- objects containing a collection of values (e.g., a 'string' of numeric or character values)
+* We can also create two-dimensional objects (or data structures) in R -- 'dataframes' or 'tibbles' 
+
+Note: A 'matrix' which I do not show here, is also a two-dimensional object but matrices can only contain a single data type, whereas dataframes and tibbles can contain more than one data type)
+
+```{r dataframes}
+# R has several built-in dataframes that can be called up just by typing their name
+iris # View the contents of 'iris' below this code chunk
+?iris # What data are contained within 'iris'?
+
+head(iris)
+head(iris, 3) # What does the 'head' function do?
+tail(iris) # What does the 'tail' function do?
+
+dim(iris) # Get the dimensions of the dataframe (or tibble): rows are always first, columns are always second
+
+summary(iris) # Summarize the data within each column with the summary() functoin
+str(iris) # The str() function also tells us the column names, but instead of giving us a 'summary' of the values within each column, it explicitly tells us the type of data within each column and gives us a preview of the first 10 values 
+
+# Create a new dataframe:
+snakedf<-data.frame(names = snake_names[1:6], length_cm = snake_cm)
+
+# Always look at the new dataframe you have created to make sure it is what you expected (see output below this code chunk)
+snakedf
+
+class(snakedf)
+
+summary(snakedf)
+
+# Look at the dataframe again by either re-running the line of code above or retyping it below:
+snakedf
+
+# Based on the dataframe you created, predict the output for each of the commands below:
+snakedf[1,1]      # Returns the value within the first row, first column
+snakedf[4,]       # Returns the values within the fourth row, all columns
+snakedf[,2]       # Returns the values within the second column, all rows
+snakedf$length_cm # Return all values within the 'length_cm' column (note that this is the same output as the line of code above!)
+```
+
+Tibbles are similar to dataframes but are 'tidyverse'-specific
+```{r tibbles}
+snake_data <- tibble(names = snake_names[1:6], length_cm = snake_cm) # Creates a table with two columns, but the data contained within is the same as in the 'snakedf' object we created in the preceding chunk
+snake_data[1,1]      # index for first row, first column
+snake_data[4,]       # index for fourth row, all columns
+snake_data[,2]       # index for second column, all rows
+
+snake_data$length_cm # Note that we call up values within a column by using the dataframe or tibble name followed by a '$' followed by the column name
+
+snake_data$length_m <- snake_data$length_cm/100  # make new column called 'length_m' by dividing every value in the specified column (length_cm) one by 100
+
+snake_data$snake_age <- c(4, 8, 21, 7, 12, 9) # Make a new column called 'snake_age' from scratch that contains six integers
+
+str(snake_data)  # This 'structure' function is extremely informative!
+summary(snake_data) # Also very informative!
+
+View(snake_data) # I do NOT like this function but some people love it...
+snake_data # Using Rmarkdown, you can look at the contents of the dataframe or tibble in the white space below the code chunk rather than in a separate table (as the View() function opens)
+
+# What will the line of code below do??
+snake_data$snake_diet <- c("mice", "mice", "rats", "newts", "fish", "eggs")
+
+# After you manipulate or tidy your data in any way, be sure to look and make sure the output is what you expected!
+snake_data # Is this what you expected?
+
+max(snake_data[,4]) # Return the largest value in the fourth column (the 'age' column)
+max(snake_data$snake_age) # Or we can just specify the name of the column
+snake_data$snake_age %>% max() # Don't forget about le pipe :)
+```
+
+# Plotting our data with ggplot
+
+When we start working with data, we always want to LOOK at the data early on! The includes looking at the raw dataframe or tibble, as well as visualizing the data using figures (plots).
+
+The 'tidyverse' in R contains the 'ggplot' package which is excellent for making figures!
+
+ggplot has layers like an onion:
+(1) First we create an empty palette on which we tell R what data to include
+(2) Next we tell R what to 'paint' on the empty palette (e.g., lines, points, bars, etc)
+(3) Lastly, we customize the information contained on the palette (e.g., font sizes). We also can customize within the parentheses of the functions we use in the second step.
+
+We use a '+' to add 'layers' or information that customizes our figure
+
+```{r ggplot}
+# For future reference! https://ourcodingclub.github.io/tutorials/datavis/
+
+ggplot(data = snake_data, aes(x = snake_age, y = length_cm)) + # assign data to x- and y-axes
+  geom_point(color = "darkgreen") +    # plot the data as a scatterplot, in this case we specify the color of the points as dark green, as opposed to the default of black (if no information is included within the parentheses)
+  labs(x = "Age of snake (months)",    # x-axis label
+       y = "Length of snake (cm)") +   # y-axis label
+  theme_classic()
+
+# SCROLL DOWN TO SEE YOUR FIGURE!!
+
+# Now, look at the output if you only run the first line of ggplot code, the first and second lines of ggplot code, the first and second and third lines of ggplot code, etc.
+
+# First line of code only. SCROLL DOWN TO SEE THE FIGURE, WHAT DO YOU SEE??
+ggplot(data = snake_data, aes(x = snake_age, y = length_cm))
+
+# First and second lines of code only. SCROLL DOWN TO SEE THE FIGURE, WHAT DO YOU SEE??
+ggplot(data = snake_data, aes(x = snake_age, y = length_cm)) +
+  geom_point(color = "darkgreen")
+
+# First, second and third lines of code only. SCROLL DOWN TO SEE THE FIGURE, WHAT DO YOU SEE??    
+ggplot(data = snake_data, aes(x = snake_age, y = length_cm)) + 
+  geom_point(color = "darkgreen") +
+  labs(x = "Age of snake (months)", y = "Length of snake (cm)")
+
+# First, second, third and fourth lines of code. SCROLL DOWN TO SEE THE FIGURE, WHAT DO YOU SEE??  
+ggplot(data = snake_data, aes(x = snake_age, y = length_cm)) + 
+  geom_point(color = "darkgreen") + 
+  labs(x = "Age of snake (months)", y = "Length of snake (cm)") +  
+  theme_classic()
+
+# First, second, third and fourth lines of code with a customization in the last line. SCROLL DOWN TO SEE THE FIGURE, WHAT DO YOU SEE??  
+ggplot(data = snake_data, aes(x = snake_age, y = length_cm)) + 
+  geom_point(color = "darkgreen") + 
+  labs(x = "Age of snake (months)", y = "Length of snake (cm)") +  
+  theme_classic(base_size = 18)
+```
+
+# Aside: Exploring and setting directories with getwd(), setwd() and list.files()
+
+OFTEN WE ARE WORKING WITH DATA ENTERED INTO SPREADSHEETS OR OTHER FORMATS OUTSIDE OF R!! In these cases we need to 'read in' our data for R to use. 
+REVIEW FILE STRUCTURES AND DIRECTORIES so we know WHERE our data are before reading it in...
+```{r exploring and setting directories}
+getwd() # This tells us the curent 'working directory', i.e., the location from which R is looking for files that we ask to read into R, or to where we will save data or figures generated within R (if not otherwise specified in the 'path')
+
+setwd() # We can set our 'working directory' to a specific folder if we wish (Note, I rarely do this because I usually just specify the 'path' name, but this function can be useful)
+
+list.files() # If you are getting an error reading in or writing files to folder, it can be useful to check that you are in the folder you expect to be in, and that the file you are trying to read into R or folder two which you are trying to write files is actually present and spelled exactly as specified to R
+```
+
+# Learn to code by learning from other people's code!
+
+The point of this exercise is not for you to know what every single one of these functions in the code below means and does. The point of this exercise is to use provided code below that answers the example question, and then take this code that someone else has written and that works successfully and MODIFY IT to answer your own question.
+
+Few of us know 100% how to code every part of every single thing we're doing in R! You can be successful by learning how troubleshoot and modify code to answer your own question(s).
+
+# Example lab exercise
+
+NOTE: These examples are based on real people, real organisms and real data!
+
+Eric asked Wei Ji Peng and Gabe to look for leafhoppers on tea plants. They kept track of whether one or more leafhoppers were present on 200 leaves each from five different tea plants. 
+
+Eric asked me to help him plot number of leaves observed (number of trials AKA "sampling effort") against estimated leafhopper presence (probability of seeing 1+ leafhoppers on a leaf). He wants to determine the fewest number of leaves he can look at while still getting a "sufficiently accurate" estimate of the leafhopper presence on a tea plant. 
+
+(P.S., This is just similar to your HW #1!! So, in theory you could also modify the code below you plot your homework assignment!)
+
+First, we need to read in the data and format it with the appropriate information for creating a plot (aka figure)
+```{r data cleaning}
+# Read the data into R
+step1 <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab1/leafhoppers.csv") # read_csv reates a tibble containing the data. Note that read_csv() only works in the tidyverse
+
+step1a <- read.csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab1/leafhoppers.csv") # Same exact data but now read in as a dataframe. The read.csv() function is contained within base R so it works even if you do not load any packaages/libraries
+
+# Look at the data and become familiar with the contents and data types within
+step1
+dim(step1)
+str(step1)
+summary(step1)
+
+step2 <- step1 %>% gather(key = "plant_ID", value = "no_leafhoppers")
+step3 <- step2 %>% group_by(plant_ID) 
+step4 <- step3 %>% mutate(observation = row_number(), 
+                          cumulative = cumsum(no_leafhoppers),
+                          density = cumulative / observation)
+
+# Look at the tibbles created within each 'step'. Enter a comment after each of the four lines of code below to clarify what was added or different at each step
+step1
+step2
+step3
+step4
+
+
+# In real life, we might want to condense our code by stringing all of the above steps together (Maybe not all at once!! But here goes...):
+leafhoppers <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab1/leafhoppers.csv") %>% 
+  gather(key = "plant_ID", value = "no_leafhoppers") %>% 
+  group_by(plant_ID) %>% 
+  mutate(observation = row_number(), 
+         cumulative = cumsum(no_leafhoppers),
+         density = cumulative / observation)
+
+str(leafhoppers)
+summary(leafhoppers)
+
+unique(leafhoppers$plant_ID) # What does this line of code give us?
+```
+
+Next, plot the data!
+```{r data visualization}
+
+# The figure below shows cumulative sampling effort across all treatments combined
+ggplot(data = leafhoppers, aes(x = observation, y = density)) +
+  geom_line() + 
+  labs(x = "Sampling effort (leaves)", 
+       y = "Estimated probability") + 
+  theme_classic()
+
+# The figure below shows cumulative sampling effort for only "plant_01"
+ggplot(data = leafhoppers %>% filter(plant_ID == "plant_01"), aes(x = observation, y = density)) +
+  geom_line() + 
+  labs(x = "Sampling effort (leaves)", 
+       y = "Estimated probability") + 
+  theme_classic()
+
+# The figure below shows sampling effort by plant ID, where each plant ID gets a unique color as specified under scale_color_manual()
+ggplot(data = leafhoppers, aes(x = observation, y = density, color = plant_ID)) + 
+  geom_line() + 
+  labs(x = "Sampling effort (leaves)", 
+       y = "Estimated probability") + 
+  theme_classic() +
+# you can also customize the colors by adding (+) this line:
+scale_color_manual(name = "Plant ID", labels = c("1","2","3","4","5"),
+                  values = c("pink","black","purple","dodgerblue","limegreen"))
+```
+
+# ACTUAL EXERCISE FOR YOU TO COMPLETE IN LAB
+
+- Read in the provided data in firefiles.csv
+- Plot the estimated number of male Photinus carolinus flash patterns (no_carolinus) per minute over sampling effort (each row is a single 1-minute observation) for each of the four light treatments.
+
+HINT: In the treatment column, B = blue light, A = amber light, R = red light, D = dark, no light
+
+```{r INSERT CODE TO CREATE YOUR FIGURE BELOW}
+# Remember, if you are getting errors reading in the data, make sure it is where you expect it to be, e.g., 
+list.files("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab1")
+
+# Read in the data
+firefly <- read_csv() # OR read.csv()
+
+# Manipulate the data so that it contains the necessary information for plotting
+
+
+# Plot the data
+
+
+```

@@ -1,0 +1,539 @@
+---
+title: "BIO456/556 binomial models"
+date: "2025-09-15"
+output:
+  html_document: default
+    df_print: paged
+---
+
+```{r libraries, message=FALSE}
+library(tidyverse)
+library(lubridate) # for dealing with dates
+library(lmtest) # for likelihood ratio test, lrtest()
+library(bbmle) # for AIC and ICtab()
+```
+
+Today, let's run some *binomial models*.
+
+### FUN WITH WEEVILS
+First let's create an object that contains our data. Since this dataset is relatively small, there are several ways to do this.
+```{r read in data}
+#Option 1: read in a datafile as a dataframe
+see_no_weevil <- read.csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab5/oaks.csv")
+
+see_no_weevil
+
+#Option 2: read in datafile as a tibble
+see_no_weevil <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week5/oaks.csv")
+
+see_no_weevil
+
+#Option 3: Since this is a very small dataset, we can simply create the dataset within our code; we can create it as a dataframe using the data.frame() function or as a tibble using the tibble() function -- here we'll create a tibble
+see_no_weevil <- 
+  tibble(site = rep(c("H","S","V"), each = 2),
+         oak.sp = rep(c("red","white"), times = 3),
+         weevils = c(584, 406, 910, 308, 391, 500),
+         none = c(187, 74, 118, 66, 101, 82),
+         trials = weevils + none) 
+
+see_no_weevil
+#Note in this last option, we've created an extra column called 'trials' for total number of acorns that were observed
+```
+Next, let's calculate the probability of seeing weevils in the acorns for three potential models.
+
+MODEL 1: The proportion of acorns infected with weevils is the same across all sites and species (m1)
+
+MODEL 2: The proportion of acorns infected with weevils differs by oak species (m2)
+
+MODEL 3: The proportion of acorns infected with weevils differs by site (m3)
+
+First we'll calculate these proportions and compare the models by hand using likelihood ratio tests (LRT) and AIC
+```{r LRT and AIC by hand}
+#Create a new tibble that contains additional rows with probabilities associated with each of our three models
+hear_no_weevil <- see_no_weevil %>%
+  mutate(p1 = sum(weevils)/sum(trials)) %>% # m1
+  group_by(oak.sp) %>%
+  mutate(p2 = sum(weevils)/sum(trials)) %>% # m2
+  group_by(site) %>% # overrides previous group_by()
+  mutate(p3 = sum(weevils)/sum(trials)) %>% # m3
+  ungroup() # just in case weird things happen later
+
+hear_no_weevil
+
+#Create another new tibble that now also contains the likelihood associated with each row of data, based on the probabilities of the data calculated above
+speak_no_weevil <- hear_no_weevil %>%
+  mutate(LL_p1 = dbinom(weevils, trials, p = p1, log = TRUE),
+         LL_p2 = dbinom(weevils, trials, p = p2, log = TRUE),
+         LL_p3 = dbinom(weevils, trials, p = p3, log = TRUE))
+
+speak_no_weevil
+
+#Recall the the likelihood of our model is the sum of the likelihoods of row of data
+LL_m1 <- sum(speak_no_weevil$LL_p1)
+LL_m2 <- sum(speak_no_weevil$LL_p2)
+LL_m3 <- sum(speak_no_weevil$LL_p3)
+
+LL_m1
+LL_m2
+LL_m3
+
+#Conduct likelihood ratio tests to compare our models
+#(1) Compare models 1 & 2
+test_statistic_m1m2 <- -2*(LL_m1 - LL_m2) # LL from simple model minus LL from complex model
+pchisq(test_statistic_m1m2, 
+       df = 2-1, # no. parameters in complex model minus no. parameters in simple model
+       lower.tail = F) # slightly more support for null model (m1) than species model (m2)
+
+#(2) Compare models 2 & 3
+test_statistic_m1m3 <- -2*(LL_m1 - LL_m3) # LL from simple model minus LL from complex model
+pchisq(test_statistic_m1m3, 
+       df = 3-1, # no. parameters in complex model minus no. parameters in simple model
+       lower.tail = F) # waaay more support for site model (m3) than null model (m1)
+
+# Alternatively, use An Information Criterion (AIC) 
+#AIC = 2*k − 2*log(Likelihood) to compare all three models at once where k = the number of parameters estimated by the model
+AIC1 <- 2*1 - 2*LL_m1 #k = 1 p for whole dataset
+AIC2 <- 2*2 - 2*LL_m2 #k = 2 p for dataset (one for each species) 
+AIC3 <- 2*3 - 2*LL_m3 #k = 3 p for dataset (one for each site)
+
+AIC1
+AIC2
+AIC3
+
+#Calculate the difference in AIC (the delta AIC) between the more complex models and the simpler models 
+AIC2 - AIC1 
+AIC3 - AIC1
+```
+
+Answer the following questions:
+
+1. What happens to the model likelihood when you additional parameters, i.e., complexity?
+
+2. Which model is the best model based on the likelihood ratio tests? How did you come to this conclusion?
+
+3. Which model is the best model based on AIC? How did you come to this conclusion?
+
+
+Now, let's use the glm() function and other built-in functions in R to compare the models using LRT and AIC
+```{r LRT and AIC with glm()}
+# m1: same proportion of weevil infested acorns across all samples
+# m2: difference in proportion of weevil infested acorns by oak species 
+# m3: difference in proportion of weevil infested acorns by site
+
+# `~` can be interpreted as "is determined by"
+#For m1, the distribution of weevil infested acorns is determined by a single parameter
+m1 <- glm(cbind(weevils, none) ~ 1, 
+          data = see_no_weevil, 
+          family = binomial(link = "identity"))
+
+#For m2, the distribution of weevil infested acorns is determined by a separate parameters per oak species
+m2 <- glm(cbind(weevils, none) ~ oak.sp, 
+          data = see_no_weevil, 
+          family = binomial(link = "identity"))
+
+#For m3, the distribution of weevil infested acorns is determined by a separate parameters per site
+m3 <- glm(cbind(weevils, none) ~ site, 
+          data = see_no_weevil, 
+          family = binomial(link = "identity"))
+
+logLik(m1)
+logLik(m2)
+logLik(m3)
+
+lrtest(m1, m2)
+lrtest(m1, m3)
+
+AIC(m1)
+AIC(m2)
+AIC(m3)
+
+ICtab(m1, m2, m3)
+```
+Answer the following questions:
+
+4. Calculate the likelihood of the model for each glm using the logLik() function. How does this compare the the log likelihoods you computed by hand (i.e., LL_m1, LL_m2, & LL_m3) 
+
+5. What is the ICtab() function doing? What is the advantage of using this function?
+
+
+### FUN WITH BUTTERFLIES
+My old labmate and friend, Natalie Kerr, collected data on the individual fates of mustard white butterfly caterpillars. During Natalie's observations, these caterpillars either died or entered into winter diapause (think hibernation). Some proportion of the caterpillars that entered winter diapause developed into pupae in spring and eclosed (i.e., emerged from their pupae/chrysalises as butterflies. Natalie wanted to ask what proportion of the caterpillars emerged as butterflies?
+
+Use a glm() to estimate the proportion of fall caterpillars that emerged as butterflies in the spring. Use the "identity" link so you don't have to back-transform your coefficient estimates.
+```{r successes and failures}
+winter.bflies <- read.csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab5/mustard_white_p01.csv") %>% 
+  mutate(fails = Fall.count - Spring.count)
+
+# winter.bflys$fails <- winter.bflys$Fall.count - winter.bflys$Spring.count
+
+m1 <- glm(cbind(Spring.count, fails) ~ 1, 
+          data = winter.bflies, 
+          family = binomial(link = "identity"))
+
+summary(m1) # tells us more about our model results!
+coef(m1)    # our best estimate for P(eclosing)
+confint(m1)
+```
+
+**HOW TO READ THE MODEL SUMMARY:**
+1.  *Deviance residuals*: summary statistics (min, 1Q, median, etc) of all the data points and their deviance from the MLE; most people ignore this output.
+
+2.  *Coefficients*: information about your covariates (y ~ x). This information is as follows:
+
+    (a) intercept(s) and/or slope(s), which are the MLEs;
+    (b) their standard errors, a measure of the variation around the mean;
+    (c) z-value (quotient of MLE/SE), which is assumed to be normally-distributed;
+    (d) p-values associated with the normally-distributed z-values.
+
+3.  *Dispersion*: only important for count (Poisson-distributed) data; ignore for now.
+
+4.  *Other deviances*: this is information about the model and its 'goodness of fit'.
+
+    (a) Residual deviance: a measure of the lack of fit of your model;
+    (b) Null deviance: a measure for a reduced model that only includes an intercept.
+
+
+Answer the following questions:
+
+6. What is the 'mutate(fails = Fall.count - Spring.count)' line of code doing when we read in the mustard white butterfly data?
+
+7. Where in the summary(m1) output do we find the output we get using coef(m1)?
+
+8. Check your results: Is the MLE you obtained from the model using coef(m1) the same as what you get from the following line of code?
+
+
+> sum(winter.bflies$Spring.count)/sum(winter.bflies$Fall.count)
+
+If not, troubleshoot your model until the above two values are the same.
+If so (or once you've troubleshooted), why are these values the same?? HINT: Revisit about our "FACTS" for the binomial distribution...
+
+9. Why do you think the 'Residual deviance' and 'Null deviance' are the same in the case of this simple model? HINT: Think about what a "null" model is. If you're still not sure, compare models m1 and m2 or m1 and m3 for the acorn weevil data above.
+
+
+### MORE FUN WITH BUTTERFLIES
+Often binomial data are formatted as 1s and 0s, rather than total numbers of successes (1s) and failures (0s). In these data, a 1 means the caterpillar successfully entered into diapause. A 0 means the caterpillar died. Let's look at how to run a glm when our data are formatted in this slightly different way. Then we'll compare our result to two separate models where these same data are formatted as successes and failures.
+
+```{r using 1s and 0s instead, part 1}
+butterflies <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab5/mustard_white_p02.csv") %>% 
+  filter(Dead == 0) %>% # new tibble w/o dead individuals
+  select(Treatment, Sex, Diapause) # get rid of last two columns 
+bfly.grouped <- butterflies %>% 
+  group_by(Treatment, Sex) %>%
+  summarize(success = sum(Diapause == 1),
+            failure = sum(Diapause == 0)) %>%
+  mutate(trials = success + failure)
+
+bfly.onenumb <- butterflies %>% 
+  group_by(Sex) %>%
+  summarize(success = sum(Diapause == 1),
+            failure = sum(Diapause == 0)) %>%
+  mutate(trials = success + failure)
+
+butterflies  # our complete tibble, with all our data
+bfly.grouped # grouped by treatment and sex, some data lost
+bfly.onenumb # total trials and events by sex, lots of data lost
+
+# first I will run an intercept-only binomial GLM to estimate 
+# the probability of diapausing *conditioned on* surviving 
+
+m1.boolean <- glm(Diapause ~ 1, 
+                  data = butterflies, 
+                  family = binomial(link = "identity"))
+m1.grouped <- glm(cbind(success, failure) ~ 1, 
+                  data = bfly.grouped, 
+                  family = binomial(link = "identity"))
+m1.onenumb <- glm(cbind(success, failure) ~ 1, 
+                  data = bfly.onenumb, 
+                  family = binomial(link = "identity"))
+
+coef(m1.boolean) # estimated P(diapause)
+coef(m1.grouped)
+coef(m1.onenumb)
+
+logLik(m1.boolean) # log-likelihood of model
+logLik(m1.grouped)
+logLik(m1.onenumb)
+
+AIC(m1.boolean)
+AIC(m1.grouped)
+AIC(m1.onenumb)
+
+summary(m1.boolean)
+confint(m1.boolean) # 95% CI around estimated P(diapause)
+
+summary(m1.grouped)
+confint(m1.grouped)
+
+summary(m1.onenumb)
+confint(m1.onenumb)
+```
+
+Answer the following question:
+
+10. Why are the coefficient estimates and confidence intervals for the three models the same but the likelihood estimates are different?
+
+```{r using 1s and 0s instead, part 2}
+# Here we'll run a more complex GLM, NESTED WITHIN the first models above, in which we'll ask if sex affects probability of entering iapause
+
+m2.boolean <- glm(Diapause ~ Sex,
+                  data = butterflies, 
+                  family = binomial(link = "identity"))
+m2.grouped <- glm(cbind(success,failure) ~ Sex, 
+                  data = bfly.grouped, 
+                  family = binomial(link = "identity"))
+m2.onenumb <- glm(cbind(success,failure) ~ Sex, 
+                  data = bfly.onenumb, 
+                  family = binomial(link = "identity"))
+
+coef(m2.boolean) # estimated P(diapause)
+coef(m2.grouped) 
+coef(m2.onenumb)
+
+logLik(m2.boolean) # log-likelihood of model
+logLik(m2.grouped)
+logLik(m2.onenumb)
+
+AIC(m2.boolean) # AIC of model
+AIC(m2.grouped)
+AIC(m2.onenumb)
+```
+
+Answer the following questions:
+
+11. Re-run any one of the three models above, but this time use the syntax `~ -1 + Sex` OR `~ 0 + Sex`. How does this change the coef() output?
+
+12. Which syntax represents the 'effects' parameterization and which represents the 'means' parameterization?
+
+13. If you only have the coefficient values from the 'effects' parameterization, how, mathematically, would you get the expected coefficient values that would be returned from the 'means' parameterization?
+
+14. In the 'effects' parameterization, which coefficient is the "reference group"? Why?
+
+Finally, let's compete our matched pairs of models for whether we have a single mean probability of entering diapause that is the same across all butterflies, or if the probability of entering diapause differs between male and female butterflies.
+
+```{r using 1s and 0s instead}
+lrtest(m1.boolean, m2.boolean)
+lrtest(m1.grouped, m2.grouped)
+lrtest(m1.onenumb, m2.onenumb)
+
+ICtab(m1.boolean, m2.boolean)
+ICtab(m1.grouped, m2.grouped)
+ICtab(m1.onenumb, m2.onenumb)
+
+# What we are NOT going to do is the following...
+ICtab(m1.boolean, m2.boolean, 
+      m1.grouped, m2.grouped, 
+      m1.onenumb, m2.onenumb) 
+
+# NEVER COMPARE MODELS FIT TO DIFFERENT DATA!!!
+```
+
+Answer the following question:
+
+15. Which model best describes our data?
+
+16. For both m1 & m2, the models that used the 'onenumb' dataset had the largest likelihood and the smallest AIC, and the models that used the 'boolean' dataset had the smallest likelihood and the largest AIC. Why do you think this might be? 
+
+For fun, let's plot our likelihood profiles. Work through and make sure you understand what this code is doing!
+
+```{r likelihood profiles}
+bfly.F <- bfly.grouped %>% filter(Sex == "female")
+bfly.M <- bfly.grouped %>% filter(Sex == "male")
+
+likelihood <- tibble(models = seq(from = 0.001, to = 0.999, by = 0.001),
+                     loglik.B = 0, #data from both sexes
+                     loglik.F = 0, #just data from females
+                     loglik.M = 0) #just data from males
+
+#Loops! This is similar to what we did in lab two weeks ago :)
+for (i in 1:length(likelihood$models)) {
+  likelihood$loglik.B[i] = dbinom(x = bfly.grouped$success, 
+                                  size = bfly.grouped$trials,
+                                  prob = likelihood$models[i], log = T) %>% sum()
+  likelihood$loglik.F[i] = dbinom(x = bfly.F$success, 
+                                  size = bfly.F$trials,
+                                  prob = likelihood$models[i], log = T) %>% sum()
+  likelihood$loglik.M[i] = dbinom(x = bfly.M$success, 
+                                  size = bfly.M$trials,
+                                  prob = likelihood$models[i], log = T) %>% sum()
+}
+
+m2.booleanMEANS <- glm(Diapause ~ -1 + Sex, 
+                  data = butterflies, family = binomial(link = "identity"))
+
+#In this ggplot, we're plotting several separate lines from different parts of our tibble
+ggplot(likelihood, aes(x = models, y = loglik.B)) +
+  geom_line(color = "limegreen") +
+  geom_line(aes(y = loglik.F), color = "pink") + # DON'T COMPARE THESE LIKELIHOODS
+  geom_line(aes(y = loglik.M), color = "dodgerblue") + # DON'T COMPARE THESE LIKELIHOODS
+  geom_vline(linetype = "dashed", color = "limegreen", xintercept = coef(m1.boolean)) +
+  geom_vline(linetype = "dashed", color = "pink", xintercept = coef(m2.boolean)[1]) +
+  geom_vline(linetype = "dashed", color = "dodgerblue", xintercept = coef(m2.booleanMEANS)[2]) +
+  theme_bw() + ylim(-250,0)
+```
+Answer the following questions:
+
+17. What does the solid green line in the above figure represent?
+
+18. What does the dashed blue line in the above figure represent?
+
+Rerun the m2.booleanMEANS model above, but this time remove the (link = "identity"), i.e.,
+```{r}
+m2a.booleanMEANS <- glm(Diapause ~ -1 + Sex, 
+                  data = butterflies, family = binomial)
+
+#Compare the coefficients between the two models
+coef(m2.booleanMEANS) 
+coef(m2a.booleanMEANS)
+```
+
+Answer the following question:
+
+19. What function do you need to apply to the coefficients of m2a.booleanMEANS (i.e., where we removed '(link = "identity")' from the glm() syntax) to obtain the exact same values you get for the coefficients of m2.booleanMEANS
+
+
+### FUN WITH BUMBLEBEES
+Jessie and Chris followed Bombus impatients bumblebees as they visited flowers in different plots in two different greenhouses. Each flower belonged to plant that had either been fertilized ("F") or left to grow without any help ("U" for unfertilized). Each plot had been given a low, medium, or high rain treatment, which may also have affected the allure of the flowers to bees.
+
+I have scored each bumblebee that they followed as having a preference for either fertilized (1) or unfertilized (0) flowers, based on how many of each they visited. So for these data a 'success' will be a bumblebee that prefers fertilized flowers, while a 'failure' will be one that prefers unfertilized flowers (or visited an equal number of each, showing no preference).
+
+```{r read in and tidy up data, message=FALSE}
+#I've cleaned up the original data a bit for you. As needed, make sure you understand what task each %>% is performing on the data by breaking up the very long line of code below that yields the tibble entitled 'bumb'.
+
+bumb <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab5/humblebees.csv") %>%
+  select(date, observer, greenhouse, rain, no_F_visited, no_U_visited) %>%
+  mutate(date = mdy(date), # this function from the lubridate package tells R to treat this column as an actual date rather than as character data
+         rain = rain %>% factor(levels = c("L","M","H"), labels = c("low", "medium", "high")),
+         observer = observer %>% factor(labels = c("Chris", "Jessie")),
+         preference = ifelse(no_F_visited > no_U_visited, 1, 0)) %>%
+  group_by(date, observer, greenhouse, rain) %>%
+  summarize(successes = sum(preference == 1),
+            failures = sum(preference == 0),
+            trials = successes + failures)
+
+bumb
+```
+
+
+```{r calculate MLE for a P(visiting fertilized flowers}
+#What proportion of butterflies visit fertilized flowers in these data?
+
+k = sum(bumb$successes)
+N = sum(bumb$trials)
+p_MLP = k/N #maximum likelihood proportion
+
+p_MLP
+
+#What's the log-likelihood of the entire dataset, using the maximum likelihood estimate/proportion we estimated above?
+log.likelihood = dbinom(bumb$successes, bumb$trials, p_MLP, log = T) %>% 
+  sum() #maximum likelihood estimate (log-likelihood)
+
+log.likelihood
+
+
+b1 <- glm(cbind(successes, failures) ~ 1, 
+          data = bumb, family = binomial(link ="identity"))
+
+coef(b1) #compare this to the object p_MLP that we created above
+confint(b1)
+logLik(b1)
+
+#NOTE: You could run the glm() above using the original humblebee.csv dataset which is formatted as 0s and 1s. Try it and see if it works for you!! (i.e., do you get the same results?)
+```
+
+```{r plot our overall preference data (single MLE)}
+#Let's make a tidy (tidier?) version of these data that helps us to more easily make a figure in ggplot
+bumb_tidy <- bumb %>% 
+  pivot_longer(successes:failures, 
+               names_to = "preference", 
+               values_to = "count") %>%
+  mutate(preference = preference %>% 
+           factor(levels = c("successes", "failures")))
+
+bumb_tidy
+
+
+ggplot(bumb_tidy, aes(x = preference, 
+                      y = count, 
+                      fill = preference)) + 
+  geom_violin() + geom_boxplot(fill = "white", width = 0.25) +
+  geom_jitter(height = 0, width = 0.3) +
+  scale_fill_manual(name = "Prefers fertilized?", 
+                    values = c("green4","gold4"),
+                    labels = c("YES","NO")) + 
+  theme_bw() + labs(x = "", y = "Number of bumbles")
+
+#This is a violin plot with a boxplot layered on. 
+#The violin plots give us information about how the data are distribute across their max and min values. 
+#The boxplots allow us to compare the means and upper and lower quantiles between the groups. 
+#Here we've also overlaid the raw data.
+```
+
+```{r rain treatment plot}
+
+#Here we can introduce an additional variable into the plot. What happens when we separate out our bumblebees that prefer fertilized vs unfertilized flowers by rain treatment?
+
+ggplot(bumb_tidy, aes(x = rain,
+                      y = count, 
+                      fill = preference)) + 
+  geom_boxplot() +
+  scale_fill_manual(name = "Prefers fertilized?", 
+                    values = c("green4","gold4"),
+                    labels = c("YES","NO")) + 
+  theme_bw() + labs(x = "Rain treatment", y = "Number of bumbles")
+```
+Answer the following question:
+
+20. Based on the above figure representing the RAW DATA, do you expect the probability of preferring fertilized flowers will differ by rain treatment? Why or why not? (Don't worry about whether you're *right* or not based on the results you'll get from a statistical model, just make an educated guess!)
+
+```{r rain treatment GLM}
+b2 <- glm(cbind(successes, failures) ~ -1 + rain, 
+          data = bumb, family = binomial(link ="identity"))
+coef(b2)
+logLik(b2)
+
+lrtest(b1, b2)
+ICtab(b1, b2)
+```
+
+
+**Submit your code for the challenges below individually, but feel free to help each other!**
+
+#### CHALLENGE #1 #####
+Does the probability of a bumble bee preferring fertilized flowers change based on who was tracking it??? Test this "by hand" (see Chunk 3), then use glm() and lrtest() (see Chunk 4) to check your results.
+
+```{r challenge 1}
+ggplot(bumb_tidy, aes(x = observer,
+                      y = count, 
+                      fill = preference)) + 
+  geom_boxplot() +
+  scale_fill_manual(name = "Prefers fertilized?", 
+                    values = c("green4","gold4"),
+                    labels = c("YES","NO")) + 
+  theme_bw() + labs(x = "Bee peeper", y = "Number of bumbles")
+
+# your
+# annotated (!!)
+# code 
+# goes
+# here
+```
+
+#### CHALLENGE #2 #### 
+
+### FUN WITH FIREFLIES
+What is the overall probability of seeing a firefly under a random light treatment (i.e., a single parameter model)? Does this probability vary significantly across the four light treatments? If so, how? Investigate using glm(), then write a sentence explaining your test output in English.
+
+```{r challenge 2}
+fireflies <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab5/fireflies.csv") %>%
+  mutate(treatment = treatment %>% 
+           factor(levels = c("D","B","A","R"),
+                  labels = c("dark","red","amber","blue")))
+
+fireflies
+
+# your
+# annotated
+# code 
+# goes
+# here
+```

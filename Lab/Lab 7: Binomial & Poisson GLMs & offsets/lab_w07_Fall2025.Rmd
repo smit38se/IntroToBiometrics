@@ -1,0 +1,464 @@
+---
+title: "BIO 456/556 Lab week 07"
+author: "Lee Brown"
+date: "2025-10-05"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r libraries, message=FALSE}
+library(tidyverse)
+library(lmtest) # for lrtest()
+library(bbmle) # for ICtab()
+```
+
+Lab 5: CHALLENGE 1
+Does the probability of a bumble bee preferring fertilized flowers change based on who was tracking it??? (I.e., is there an observer effect?) 
+Test this "by hand", then use glm() and lrtest() to check your results.
+```{r lab 5: CHALLENGE 1}
+# Read in and format data
+bumb <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab5/humblebees.csv") %>%
+  dplyr::select(date, observer, greenhouse, rain, no_F_visited, no_U_visited) %>%
+  mutate(date = mdy(date), # this function comes in the lubridate package
+         rain = rain %>% factor(levels = c("L","M","H"), labels = c("low", "medium", "high")),
+         observer = observer %>% factor(labels = c("Chris", "Jessie")),
+         preference = ifelse(no_F_visited > no_U_visited, 1, 0)) %>%
+  group_by(date, observer, greenhouse, rain) %>% # forgot to ungroup()!
+  summarize(success = sum(preference == 1),
+            failure = sum(preference == 0),
+            trials = success + failure) 
+
+bumb <- bumb %>% ungroup() %>% # <- not doing this causes problems for some folks!
+  mutate(p1 = sum(success)/sum(trials)) %>%
+  group_by(observer) %>%
+  mutate(p2 = sum(success)/sum(trials)) %>%
+  ungroup() %>%
+  mutate(LL_p1 = dbinom(success, trials, p = p1, log = TRUE),
+         LL_p2 = dbinom(success, trials, p = p2, log = TRUE))
+  
+LL_m1 <- sum(bumb$LL_p1)
+LL_m2 <- sum(bumb$LL_p2)
+
+## TEST for observer effect "BY HAND" ##
+# the two lines of code below for doing the likelihood ratio test yield the same result
+pchisq(-2*(LL_m1 - LL_m2), df = 2-1, lower.tail = F) 
+pchisq(2*(LL_m2 - LL_m1), df = 2-1, lower.tail = F) 
+
+AIC1 <- 2*1 - 2*LL_m1 #AIC for model 1 (single preference probability across all observations)
+AIC2 <- 2*2 - 2*LL_m2 #AIC for model 2 (preference probability differs depending on who who was tracking the bees)
+
+AIC1
+AIC2
+
+## TEST BY GLM() AND LRTEST() ##
+#Now check if the above results match results using glm() function
+b1 <- glm(cbind(success, failure) ~ 1, 
+          data = bumb, family = binomial) # no more (link = "identity")
+b2 <- glm(cbind(success, failure) ~ -1 + observer, # means parameterization
+          data = bumb, family = binomial) # no more (link = "identity")
+
+lrtest(b1, b2) #compare to pchisq() code for LRT above
+ICtab(b1, b2, base = T) #compare AICs calculated by hand above
+
+coef(b1) # not helpful -- need to back-transform
+plogis(coef(b1))
+coef(b2) # not helpful -- need to back-transform
+plogis(coef(b2))
+```
+
+Lab 5: CHALLENGE 2
+What is the overall probability of seeing a firefly under a random light treatment (i.e., a single parameter model)? Does this probability vary significantly across the four light treatments? If so, how? Investigate using glm(), then write a sentence explaining your test output in English.
+```{r # EXERCISE 2}
+# Read in and format data
+fireflies <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab5/fireflies.csv") %>%
+  mutate(treatment = treatment %>% 
+           factor(levels = c("D","B","A","R"),
+                  labels = c("dark","red","amber","blue")))
+
+# Single probability of flashing across all light treatments
+f1 <- glm(no_carolinus ~ 1, data = fireflies, family = binomial)
+# Different probability depending on light treatment
+f2 <- glm(no_carolinus ~ treatment, data = fireflies, family = binomial)
+
+summary(f2)
+
+lrtest(f1, f2)
+ICtab(f1, f2, base = T)
+plogis(coef(f2))
+
+# Get means by group
+f2means <- glm(no_carolinus ~ -1 + treatment, data = fireflies, family = binomial)
+plogis(coef(f2means))
+
+# Note that when you use the lrtest or calculate by hand, the LL is the same whether you parameterize the model using the "means parameterization" of the "effects parameterization". In future lectures we will *always* have to remember to use the effects parameterization if we are testing for and "effect"
+lrtest(f1, f2means)
+
+```
+
+
+### Sampling from and visualizing distributions
+
+```{r uniform distribution}
+#### Uniform distribution ####
+sample_size <- 100000 
+lower.limit <- 0
+upper.limit <- 10
+
+distributions <- tibble(uniform = runif(n = sample_size, 
+                                        min = lower.limit, 
+                                        max = upper.limit))
+
+# the runif() function picks random numbers where every number has an equal probability of being selected
+
+#Now plot our simulated data
+ggplot(distributions, aes(x = uniform)) + 
+  geom_histogram(fill = "pink", binwidth = 1) + theme_bw()
+
+```
+
+```{r binomial distribution}
+#### bionomial distribution ####
+#imagine rolling a 4-sided dye 10 times
+no_trials <- 10 # N
+p <- 0.25 # probability of an event occurring or not in a trial
+no_trials*p*(1-p) # variance of binomially distributed data
+distributions <- distributions %>% 
+  mutate(binomial = rbinom(n = sample_size, size = no_trials, prob = p))
+
+ggplot(distributions, aes(x = binomial)) + xlim(-5, 10) +
+  geom_histogram(fill = "pink", binwidth = 1) + theme_bw()
+
+# Note the skew to the right and data are bounded by 0 and 10
+```
+
+```{r Poisson distribution}
+#### Poisson distribution ####
+lambda <- 2.5 # average number of individuals per sample, density
+distributions <- distributions %>% 
+  mutate(Poisson = rpois(n = sample_size, lambda = lambda))
+
+ggplot(distributions, aes(x = Poisson)) + xlim(-5, 10) +
+  geom_histogram(fill = "pink", binwidth = 1) + theme_bw()
+
+# Note the skew to the right and data are bounded by 0
+```
+
+```{r normal distribution}
+#### normal distribution ####
+mu <- 2.5 # average (mean) value
+SD <- sqrt(mu) # standard deviation
+distributions <- distributions %>% 
+  mutate(normal = rnorm(n = sample_size, mean = mu, sd = SD))
+
+ggplot(distributions, aes(x = normal)) + xlim(-5, 10) +
+  geom_histogram(fill = "pink", binwidth = 1) + theme_bw()
+
+# Data are nicely over the mean and not bounded by 0
+```
+
+# Change our number of trials to demonstrate how with large sample sizes, the binomial and Poisson start to look more like each other and like a normal distribution (Central Limit Theorem)
+```{r binomial-Poisson-normal distributions}
+# Here we also change the means for poisson and normal distributions to keep distributions similarly centered since poisson and binomial are bounded at 0)
+no_trials <- 1000
+lambda <- 250
+mu <- 250
+SD <- sqrt(mu) 
+
+distributions <- distributions %>% 
+  mutate(binomial.big = rbinom(n = sample_size, size = no_trials, prob = p),
+         Poisson.big = rpois(n = sample_size, lambda = lambda),
+         normal.big = rnorm(n = sample_size, mean = mu, sd = SD))
+
+# Note how centered the binomial and Poisson are over the mean, relative to in the above figures
+
+# Binomial distribution
+ggplot(distributions, aes(x = binomial.big)) + #xlim(200, 300) +
+  geom_histogram(fill = "pink", binwidth = 5) + theme_bw()
+# Poisson distribution
+ggplot(distributions, aes(x = Poisson.big)) + xlim(200, 300) +
+  geom_histogram(fill = "pink", binwidth = 5) + theme_bw()
+# Normal distribution
+ggplot(distributions, aes(x = normal.big)) + xlim(200, 300) +
+  geom_histogram(fill = "pink", binwidth = 5) + theme_bw()
+```
+The reason so much time is spent talking about normal distributions in introductory level statistics courses is because if you have enough data, all of these distributions resemble a normal distribution. 
+
+The reason we spend so much time talking about binomial and Poisson distributions in a class about ecological data is because the poor ecologists go out and see two birds... and need to know how to deal with the data
+
+### Adding confidence intervals to a bar plot
+The answer is -- DON'T.
+Bar plots are for RAW COUNT DATA
+
+But first, get to know the goldenrod data...
+```{r goldenrod data}
+goldenrod <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week7/goldenrod.csv") %>%
+  select(date, observer, greenhouse, rain, fertilizer, spikes,
+         bumble_bee, honey_bee, sweat_bee, wasp, fly, beetle) %>%
+  mutate(date = mdy(date), 
+         rain = rain %>% factor(levels = c("L","M","H"), 
+                                labels = c("low", "medium", "high")),
+         fertilizer = fertilizer %>% factor(labels = c("fertilized", "unfertilized"))) %>%
+  filter(spikes > 0) # number of flowering units that an insect might visit
+
+# Recall when we did the pollinator lab I had you count the goldenrod "spikes", not every single tiny flower!
+
+# Look at the data!
+summary(goldenrod)
+goldenrod
+```
+
+Q1. Look carefully at and get to know the data in the table above. 
+Brainstorm TWO ecological questions you could ask with the data using statistics (e.g., using a GLM)?
+1. ??
+2. ??
+
+
+```{r format wide to long}
+# format so all insect species/groups are in a single column
+golden_long <- goldenrod %>%
+  pivot_longer(bumble_bee:beetle, names_to = "species", values_to = "count") %>%
+  mutate(species = species %>% 
+           factor(levels = c("bumble_bee","honey_bee","sweat_bee","wasp","fly","beetle"),
+                  labels = c("bumble bee", "honey bee", "sweat bee", "wasp", "fly", "beetle")))
+
+# Look at the newly formatted data
+golden_long 
+summary(golden_long)
+```
+
+Barplots are total counts
+```{r barplot okay}
+# The figure below includes the raw TOTAL counts per species. It is okay. But do we really need the colors and legend? Maybe the colors are nice but we could drop the legend because it isn't adding information
+ggplot(golden_long, aes(x = species, 
+                        y = count,
+                        fill = species)) + 
+  geom_col() + theme_classic() + labs(x = "Species", y = "Total visitors") 
+
+# Remove the legend -- it is redundant
+ggplot(golden_long, aes(x = species, 
+                        y = count,
+                        fill = species)) + 
+  geom_col() + theme_classic() + labs(x = "Species", y = "Total visitors") + theme(legend.position = "none")
+```
+
+If we want to plot the data as number of visitors per day, this is a mean value, so we need to summarize the data to obtain this value
+```{r summarize means}
+#Summarize the data for the number of visits to each species
+golden_sum <- golden_long %>% 
+  group_by(species) %>%
+  summarize(mean_count = mean(count))
+```
+
+But means should never be plotted as a bar plot. I.e., don't do this:
+```{r barplot DONT}
+# Bar plot of mean number of visitors per day
+ggplot(golden_sum, aes(x = species, 
+                       y = mean_count,
+                       fill = species)) + 
+  geom_col() + ylim(0, 5) +
+  theme_bw() + labs(y = "visitors/day")
+```
+
+If we are plotting means, we also want to include confidence intervals. We can obtain these using a GLM
+```{r get confidence intervals}
+#Create a glm with to estimate a mean count for each species and use this to get the confidence intervals
+m1 <- glm(count ~ -1 + species, data = golden_long, family = poisson)
+
+# remember, CIs are our range of parameter values that are not significantly different from our maximum likelihood estimate. We can use the confint() function to get these
+exp(coef(m1)) # means for each group
+exp(confint(m1)) # CIs for each group
+
+# here we are just pulling out the value for each group to plot
+golden_sum$lower_bound <- exp(confint(m1))[,1] 
+golden_sum$upper_bound <- exp(confint(m1))[,2] 
+```
+Some people like to add CIs to bar plots that contains means instead of total counts. Done do this
+```{r barplot means and CIs DONT}
+ggplot(golden_sum, aes(x = species, 
+                       y = mean_count,
+                       fill = species)) + 
+  geom_col() + geom_point() + ylim(0, 5) +
+  geom_errorbar(aes(ymin = lower_bound, ymax = upper_bound), width = 0.15) +
+  theme_classic() + labs(y = "visitors/day")
+```
+
+# Plot means and CIs, and point and error bar plots
+```{r point and errorbars plot}
+ggplot(golden_sum, aes(x = species, 
+                       y = mean_count)) + 
+  geom_point() + ylim(0, 5) +
+  geom_errorbar(aes(ymin = lower_bound, ymax = upper_bound), width = 0.15) +
+  theme_classic(base_size = 16) + labs(x = "Species", y = "Visitors/day")
+
+# If your x-axis values are running over each other, you can rotate the names
+ggplot(golden_sum, aes(x = species, 
+                       y = mean_count)) + 
+  geom_point() + ylim(0, 5) +
+  geom_errorbar(aes(ymin = lower_bound, ymax = upper_bound), width = 0.15) +
+  theme_classic(base_size = 16) + labs(x = "Species", y = "Visitors/day") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# angle = 45 rotates the labels by 45 degrees.
+# hjust = 1 aligns the right end of the label with the tick mark, which is often helpful for angled labels to prevent overlap
+# You might also experiment with vjust adjusts vertical positioning (try vjust = 0.5)
+```
+
+
+# Boxplot example to show raw data means
+```{r boxplot example}
+# Create a boxplot that shows the number of "spikes" flowers had for every combination of rain and fertilizer treatment
+
+ggplot(goldenrod, aes(x = rain, 
+                      y = spikes, 
+                      fill = fertilizer)) + 
+  geom_boxplot() + theme_classic(base_size = 14)
+```
+
+Adding a legend IS helpful in the above plot. There *may* seem to be a difference in the number of "spikes" depending on fertilizer treatment, What do you think?
+
+# Poisson GLM with sweat bees
+```{r sweat bees}
+mean(goldenrod$sweat_bee) #1.14 == number of sweat bees observed each time the plot was visited. See how we get this value from the coefficients of an intercept-only glm()
+
+m1 <- glm(sweat_bee ~ 1, data = goldenrod, family = poisson)
+coef(m1)
+summary(m1) # see from where the coef() value is pulled?
+exp(coef(m1))
+
+# Overdispersion parameters (recall from lecture)
+m1$df.residual
+m1$deviance                    # same as deviance(m1)
+m1$deviance/m1$df.residual
+m1$deviance/m1$df.residual < 3 # not overdispersed!
+
+# Does the number of sweat bees observed vary by fertilizer treatment?
+# NOTE that this is again the means parameterization
+m2 <- glm(sweat_bee ~ -1 + fertilizer, data = goldenrod, family = poisson)
+
+# Compete two models with lrtest() to find out of fertilizer treatment effects the number of sweat bees observed!
+lrtest(m1, m2)
+ICtab(m1, m2, base = T, weights = T) #compare to results from AIC
+
+# Which treatment has fewer sweat bees? Does it have *significantly* fewer? To check this, look at coef() for means parameterized model and confint()
+exp(coef(m2)) # these are the ACTUAL means
+exp(confint(m2))
+```
+
+# Playing with offsets
+Investigate whether the number of sweat bees depends on fertilization using a glm() that takes into account the varying number of spikes
+```{r offsets vs ratios}
+# First try a ratio
+m0 <- glm(sweat_bee/spikes ~ 1, 
+          data = goldenrod, 
+          family = poisson)
+# R does NOT like this because you can't put non-integer data into a Poisson model
+
+# Now try an offset
+m1 <- glm(sweat_bee ~ 1, 
+          offset = log(spikes),
+          data = goldenrod,   
+          family = poisson)     
+
+m2 <- glm(sweat_bee ~ -1 + fertilizer, 
+          offset = log(spikes), 
+          data = goldenrod, 
+          family = poisson)
+
+lrtest(m1, m2) # P-value goes up a bit from model above without the offset
+ICtab(m1, m2, base = T, weights = T) # AIC results agree
+
+
+# Means and CIs
+exp(coef(m2)) # This can be interpreted as bees per flowering unit rather than bees per plant
+exp(confint(m2))
+```
+
+### When should we use a binomial model versus a Poisson GLM with an offset?? ###
+
+# Binomal GLM vs Poisson GLM with offset 
+In the experiment for which the data below were collected, we wanted to estimate overwinter survival of Baltimore checkerspot butterfly caterpillars. In late summer, there were nests of 10s to 100s of caterpillars per nest on each of two host plants, Plantago and turtlehead. We estimated the number of Baltimore checkerspot caterpillars per nest in the fall, then put cages around these nests and counted the number that emerged in spring.
+
+Q2. What type of data do you think these are? Justify your answer.
+
+```{r}
+winter<-read.csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab7/PostDiaLarvUSEME.csv")
+
+winter #Look at the data
+
+summary(winter)
+
+# factor categorical columns
+winter$Cage<-as.factor(winter$Cage)
+winter$Plant<-as.factor(winter$Plant)
+
+```
+
+Q3. What does factoring the Cage and Plant columns do? How does it change the summary output?
+
+
+```{r Poisson, single overwinter survival estimate}
+#Poisson
+#SINGLE HABITAT TYPE
+
+# First check that fall counts are always greater than spring counts (or at least the same if there is 100% survival), i.e., make sure the data make sense!
+winter$FallCount - winter$SpringCount
+
+### Single estimate of overwinter survival across all nests 
+m.pois<-glm(SpringCount~1,family=poisson,offset=log(FallCount),data=winter)
+summary(m.pois2)
+exp(coef(m.pois2)) 
+exp(confint(m.pois2)) 
+```
+Compare results from Poisson model to a binomial model
+```{r Binomial, single overwinter survival estimate}
+
+#Remember to use c(bind(successes,failures))
+#Binomial
+#SINGLE HABITAT TYPE
+m.binom<-glm(cbind(SpringCount,FallCount-SpringCount)~1,family=binomial,data=winter)
+summary(m.binom)
+plogis(coef(m.binom)) 
+plogis(confint(m.binom)) 
+```
+
+Q4. How do the parameter estimates from the null Poisson with offset and the null binomial GLMs above compare? 
+
+Does overwinter survival vary by host plant?
+```{r Overwinter survival depends on host plant}
+# Poisson model
+m.poisPT<-glm(SpringCount~-1+Plant,family=poisson,offset=log(FallCount),data=winter)
+
+exp(coef(m.poisPT)) 
+exp(confint(m.poisPT)) 
+
+#Compare to results from binomial model 
+m.binomPT<-glm(cbind(SpringCount,FallCount-SpringCount)~0+Plant,family=binomial,data=winter)
+
+plogis(coef(m.binomPT)) 
+plogis(confint(m.binomPT)) 
+```
+
+Q5. For the model that includes an effect of the plant on which the nest was laid, again, how do the parameter estimates from the Poisson with offset and the binomial GLM compare? 
+** Why do the two different distributions yield essentially the same answer? 
+** Can you explain this with reference to events and trials in a binomial model versus how an offset models the data?
+
+Q6. Which distribution do you think is "correct" for these data, Poisson or binomial, and why? 
+
+Q7. Is the model with the effect of plant a better fit to the data than the null model?
+```{r LR test - effect of plant}
+# Is there a significant effect of Plant?
+lrtest(m.poisPT,m.pois2)
+lrtest(m.binomPT,m.binom)
+```
+
+Q8. Are the data for the "best" model overdispersed? Why or why not? (revisit chunk 18: sweat bees above for a reminder)
+```{r check for overdispersion}
+
+```
+
+
+Q9. If the data are overdispersed, should we trust our p-values?
+What can overdispersion do to these values?
+
+Later this week and next we'll learn about how to account for other sources of variation and deal with overdispersion in our data!!

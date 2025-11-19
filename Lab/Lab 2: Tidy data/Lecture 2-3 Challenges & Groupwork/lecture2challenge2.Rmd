@@ -1,0 +1,95 @@
+---
+title: "Lecture 2 CHALLENGE #2"
+author: "Lee Brown"
+date: "2025-08-25"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+```
+
+1. Calculate the likelihood and log-likelihood of survival having each of the following values: 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9 using the 5-plant data set
+
+2. Plot the likelihood (y-axis) vs. value of survival (x-axis)
+
+3. Repeat your calculations and plotting using the 10-plant data set.  
+
+Create a vector of survival alues
+```{r survival values}
+#probability and likelihood lecture
+surv<-c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9)
+#or
+surv<-seq(0.1,0.9,0.1)
+
+surv
+```
+
+Calculate likelihoods
+```{r likelihoods}
+#calculate likelihoods
+fiveplants<-surv*surv*surv*surv*(1-surv) #or surv^4*(1-surv)
+tenplants<-surv^8*(1-surv)^2
+
+#check that the calculated values make sense
+fiveplants 
+tenplants 
+
+#calculate log-likelihoods
+fiveplantslog<-4*log(surv)+log(1-surv)
+tenplantslog<-8*log(surv)+2*log(1-surv)
+
+#check that the calculated values make sense
+fiveplantslog
+tenplantslog
+
+#Note that there is zero likelihood that survival is either 0 or 1 because we already know at least 1 survives and at least 1 dies for both of our data sets.
+
+#ALSO:
+log(surv)
+log(0)
+log(1) #0
+```
+
+Make a dataframe for plotting the data in ggplot
+```{r dataframe for plotting}
+plantdat <- data.frame(probs = surv, dataset = rep(c(rep("fiveplants", length(surv)), rep("tenplants", length(surv))),2), likelihood = c(rep("like",18),rep("logL", 18)), vals = c(fiveplants, tenplants, fiveplantslog,tenplantslog))
+
+plantdat #check dataframe
+```
+
+Plot the likelihood and log-likelihood
+```{r plot the data}
+#Plot likelihoods
+ggplot(plantdat[plantdat$likelihood=="like",], aes(x = probs, y = vals, color = dataset)) +
+         geom_line() +
+  ylim(0,0.1) +
+  labs(x = "survival value", y = "likelihood of dataset") +
+  theme_classic(base_size = 18)
+
+#Plot log-likelihoods
+ggplot(plantdat[plantdat$likelihood=="logL",], aes(x = probs, y = vals, color = dataset)) +
+         geom_line() +
+  ylim(-20,0) +
+  labs(x = "survival value", y = "likelihood of dataset") +
+  theme_classic(base_size = 18)
+```
+
+A much simpler way of platting!! 
+No need to create a dataframe, just plot the original vector data
+```{r simpler plot with less coding}
+#plot likelihoods
+#highlight all lines of code below at the same time or add a "+" after each line
+plot(surv,fiveplants,type="l", col = "blue", ylim=c(0,0.1),xlab="survival value", ylab = "likelihood of dataset")
+lines(surv,tenplants,type="l",col="red")
+legend("topleft", legend = c("five plants", "ten plants"), col = c("red", "blue"), bty = "n", lty = c(1, 1))
+
+#plot log-likelihoods
+#highlight all lines of code below at the same time or add a "+" after each line
+plot(surv, fiveplantslog, type="l", col = "blue", ylim=c(-20,0), xlab = "survival", ylab = "log-likelihood")
+lines(surv,tenplantslog,type="l",col="red")
+legend("topleft", legend = c("five plants", "ten plants"), col = c("red", "blue"), bty = "n", lty = c(1, 1))
+
+```
+
+

@@ -1,0 +1,573 @@
+---
+title: "BIO 456/556 Lab 08"
+author: "Leone M Brown"
+date: "10/13/2025"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+Talk for a minute about MASKED FUNCTIONS...
+
+# Real-life data analysis with Poisson, negative binomial & zero-inflated models
+```{r libraries, message=FALSE}
+library(tidyverse)
+library(lubridate)
+library(ggthemes)   # extra ggplot themes!
+library(gridExtra)  # side-by-side ggplots
+library(lmtest)     # for lrtest()
+library(bbmle)      # for ICtab()
+library(pscl)       # for zeroinfl()
+library(MASS)       # for glm.nb()
+library(car)        # for Anova()
+```
+
+### Poisson
+The shape of a Poisson distribution is pre-determined...
+```{r reconnecting with poisson}
+no_replicates <- 100000 
+lambda_1 <- 5  
+lambda_2 <- 10 
+lambda_3 <- 15
+lambda_4 <- 50
+
+#Simulate 10000 values from a Poisson distribution with each of 4 different means
+distributions <- tibble(Poisson_1 = rpois(n = no_replicates, lambda = lambda_1),
+                        Poisson_2 = rpois(n = no_replicates, lambda = lambda_2),
+                        Poisson_3 = rpois(n = no_replicates, lambda = lambda_3),
+                        Poisson_4 = rpois(n = no_replicates, lambda = lambda_4)) %>% 
+  pivot_longer(cols = 1:4, # all columns
+               names_to = "distribution", 
+               values_to = "random_value")
+
+ggplot(distributions, aes(x = random_value, 
+                          color = distribution, 
+                          fill = distribution)) +
+  geom_histogram(binwidth = 0.5, 
+                 position = "dodge") + # remove for stacked histogram
+  scale_fill_discrete(name = "", labels = c("λ = 5 ","λ = 10","λ = 15","λ = 50")) +
+  scale_color_discrete(name = "", labels = c("λ = 5 ","λ = 10","λ = 15","λ = 50")) +
+  theme_fivethirtyeight() + # from the "ggthemes" package
+  theme(panel.background = element_rect(fill = "white"),
+        plot.background = element_rect(fill = "white")) +
+  labs(x = "", y = "") 
+```
+
+QUESTION 1: How does the shape of the Poisson distribution change with the mean?
+
+QUESTION 2: Which of the types of models we discussed in lecture accounts for potential variation in *mean* counts across a dataset (i.e., allows for variation in expected count values beyond that explained by Poisson sampling variation alone)
+
+### Example exercise 1: Bumblebee queens
+In early spring, when floral resources can be scarce and unpredictable, queen bumble bees emerge from hibernation and start colonies underground. To understand how nutrition and body size jointly affect the probability of establishment, my friend Nick Dorian caught wild queen bees (Bombus impatiens) and measured their body size, maintained them in lab conditions with either a high or low food treatment, and recorded whether or not they started a colony.
+
+His data include:
+
+ITS = queen bumble bee body (intertegumental) size
+
+Success = did this queen bumble bee establish a colony?
+
+Food = high or low pollen treatment (high = 2g, low = 0.3g)
+
+Brood day = number of days it took this queen bumble bee to lay a brood
+
+Dev Day = number of days after brood day it took for the first worker to emerge
+
+WorkNum = number of workers produced in the first brood
+
+
+Questions we will address with these data:
+
+- How does food affect the number of workers produced?
+
+- How does food affect probability of colony establishment?
+
+Read in the data:
+```{r part 1 read in and look at the data}
+(bumbles <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab8/data/bumbles.csv"))
+```
+
+Visualize the raw data: Plot raw data relationship between food treatment and number of workers produced in the first brood
+```{r part 1 visualize, message=FALSE, warning=FALSE}
+ggplot(bumbles, aes(x = Food, 
+                    y = WorkNum, 
+                    fill = Food)) + 
+  geom_violin(alpha = 0.5) + 
+  geom_boxplot(width = 0.15) +
+  geom_jitter(width = 0.15) +
+  theme_bw() +
+  scale_fill_manual(guide = F, 
+                    values = c("pink", "yellowgreen")) +
+  labs(x = "Feeding regime", 
+       y = "Workers in first brood")
+```
+
+Plot the distribution of counts for the number of workers in the first brood based on food treatment: Are these data Poisson-distributed??
+```{r distribution of counts by treatment}
+ggplot(bumbles, aes(x = WorkNum, 
+                    fill = Food)) + 
+  geom_histogram(binwidth = 1, position = "dodge") + 
+  theme_bw() +
+  scale_fill_manual(values = c("pink", "yellowgreen")) +
+  labs(x = "Workers in first brood")
+```
+
+Remove the groupings: Now do the data look Poisson-distributed?
+```{r distribution of counts}
+ggplot(bumbles, aes(x = WorkNum)) + 
+  geom_histogram(binwidth = 1, position = "dodge") + 
+  theme_bw() +
+  labs(x = "Workers in first brood")
+```
+
+Conclusions so far:
+- From the violin plot, it looks like high pollen diet --> more workers in first brood, but need to do stats!
+
+- Really hard to tell what kind of distribution these follow.
+
+Three possibilities:
+
+1) All the data together follow a single Poisson distribution (e.g., WorkNum~1)
+
+2) We have different means for the high and low food treatments, so these are actually two separate Poisson distributions (e.g., WorkNum~Food)
+
+3) These data don't actually follow a Poisson distribution
+
+QUESTION 3: What is your prediction? Why?
+
+Let's conduct an analysis of this relationship to see if it is statistically significant. They are in fact count data, so let's go with Poisson for now...
+
+We're also going to use a new "fancy" version of our lrtest() function, the Anova() function in the 'car' package. It does NOT do an "analysis of variance". It actually does a series of LR tests on your data in turn to determine if adding any of your additional predictors results in significant model improvement, i.e., it runs "marginal hypothesis tests".
+
+*** SUPER IMPORTANT NOTE 1: Use CAPITAL "A" Anova ***
+
+*** SUPER IMPORTANT NOTE 2: Use the Anova() function ONLY with a model formatted using the EFFECTS parameterization ***
+
+```{r part 2 model for food x workers produced}
+m1 <- glm(WorkNum ~ 1, 
+          data = bumbles, 
+          family = poisson)
+
+#.fx because I used the effects parameterization
+m2.fx <- glm(WorkNum ~ Food, 
+             data = bumbles, 
+             family = poisson)
+
+lrtest(m1, m2.fx)  # this is what I use to write the summary statement below, but NOTE the lrtest p-value and AIC test are giving us the same result! It is fine to report either (but not both)!
+ICtab(m1, m2.fx)
+Anova(m2.fx)
+```
+
+QUESTION 4: How do your results from lrtest(m1, m2.fx) compare to your results from Anova(m2.fx)?
+
+
+Is there more variance than expected by chance?
+The ratio of observed:expected variance should be <3
+```{r part 2 model variance}
+var(bumbles$WorkNum, na.rm = T)/mean(bumbles$WorkNum, na.rm = T)
+
+#Is there more variance than expected by chance?
+summary(m1) #Note the deviance and residual degrees of freedom
+summary(m2.fx) #Note the deviance and residual degrees of freedom
+
+#Recall for a Poisson distribution, the ratio of deviance to residual degrees of freedom should be about the same as our ratio of observed to expected variance 
+deviance(m1)/m1$df.residual
+deviance(m2.fx)/m2.fx$df.residual
+```
+
+QUESTION 5: Are these data overdispersed?
+
+QUESTION 6:
+
+a) What is the mean number of workers by queens in the high food treatment?
+
+b) What is the mean number of workers produced by queens in the low food treatment?
+
+For QUESTION 6 above: Reminder! Either use the 'means' parameterization to get the group means OR do any math on the link scale (here the log scale) and then back-transform the final value, e.g., exp(b0 + b1) where b0 = intercept and b1 = slope coefficient
+
+
+Let's also see if there is a relationship between food treatment and colony establishment success.
+
+```{r part 3 model for food x colony success}
+n1 <- glm(Success ~ 1, 
+          data = bumbles,
+          family = binomial)
+n2.fx <- glm(Success ~ Food, 
+             data = bumbles,
+             family = binomial)
+
+lrtest(n1, n2.fx)
+ICtab(n1, n2.fx) # this is what I use to write the summary statement, but NOTE the lrtest p-value and AIC test are giving us the same result! It is fine to report either (but not both)!
+Anova(n2.fx) #check that in the case of this simple model, you get the same result as for the lrtest() above
+
+```
+
+QUESTION 7: What is the mean effect of food treatment on the probability of colony success? (Hint: If there's no effect of food treatment, there's only one mean!)
+
+
+EXAMPLE SUMMARY STATEMENT:
+
+We investigated the impact of high vs. low food treatment on bumble bee worker production using a Poisson-distributed generalized linear model (GLM). We determined if the effect of food treatment on worker production was significant using a likelihood ratio test. We investigated the impact of food treatment on the probability of a bumble bee queen establishing a colony using a binomially-distributed GLM with a logit-link, and used AIC to compare this model to a model with no effect of food treatment.
+
+Bumble bees queens laid an average of 4.0 (3.0 - 5.2; *95% CI*) workers when given high amounts of food; when given low amounts of food, queens laid an average of 2.1 +/- 1.2 workers (*mean +/- SD*). This difference was statistically significant (Poisson-distributed GLM with log-link; *LR Chisq = 4.91, df = 1, P = 0.0267*; dAIC = 2.9). Food treatment did not significantly impact the probability of a queen successfully founding a colony (LR Chisq = 1.47, df = 1, P = 0.2255; *dAIC = 0.5*), which was 29.7% across treatments.
+
+
+REGARDING THE ABOVE STATEMENT:
+
+This is just an example. The text in *asterisks* shows different options for how to report the data and results.
+
+1. You can report means and CIs or means and SDs.
+
+2. You can report results from a LR test (chisq statistic, df, p-value) or from comparison of AICs (AIC and/or dAIC and model weights). 
+
+3. Some people will say, do not mix the two model selection approaches in the same set of analyses, i.e., do not mix frequentist vs information theoretic approaches; the frequentist approach uses p-values and the information theoretic approach uses "information criterion" such as "An Information Criterion". Some "people" will get annoyed if you "mix and match"
+
+4. BUT see exception(s) below where we use AIC to help find the model with the best 'set of predictors', and then use marginal hypothesis tests to determine if there is a significant effect of these predictors
+
+5. So "mixing and matching" can also be okay depending on your reason for doing it :)
+
+
+### Not Poisson
+Distributions we might see in the "real" world
+
+Compare the distribution of Poisson, binomial, negative binomial, and zero-inflation versions of these models
+```{r departing from poisson}
+sample_size <- 100000 
+mu <- 5 # average (mean) value
+SD <- 2 # standard deviation
+trials <- 30 
+p <- 0.16667    # binomial probability of an event occurring in a trial
+lambda_1 <- 5   # for Poisson, average no individuals per sample, density
+lambda_2 <- 7.5 
+lambda_3 <- 10
+lambda_4 <- 12.5
+
+distributions <- tibble(binomial = rbinom(n = sample_size, size = trials, prob = p)) %>% 
+  mutate(zero_binom = c(rep(0, sample_size/4),
+                        rbinom(n = 3*sample_size/4, size = trials, prob = p)),
+         Poisson = rpois(n = no_replicates, lambda = lambda_1),
+         zero_Pois = c(rep(0, sample_size/4),
+                       rpois(n = 3*sample_size/4, lambda = lambda_1)),
+         neg_binom = c(rpois(n = sample_size/4, lambda = lambda_1), 
+                       rpois(n = sample_size/4, lambda = lambda_2),
+                       rpois(n = sample_size/4, lambda = lambda_3),
+                       rpois(n = sample_size/4, lambda = lambda_4)),
+         zero_nbin = c(rep(0, sample_size/4),
+                       rpois(n = sample_size/4, lambda = lambda_1), 
+                       rpois(n = sample_size/4, lambda = lambda_2),
+                       rpois(n = sample_size/4, lambda = lambda_3))) %>% 
+  pivot_longer(cols = 1:6, # all columns
+               names_to = "distribution", 
+               values_to = "random_value") %>%
+  mutate(distribution = factor(distribution, 
+                               levels = c("binomial", "zero_binom", 
+                                          "Poisson", "zero_Pois", 
+                                          "neg_binom", "zero_nbin"),
+                               labels = c("binomial", 
+                                          "zero-inflated binomial", 
+                                          "Poisson", 
+                                          "zero-inflated Poisson",
+                                          "negative binomial", 
+                                          "zero-inflated negative binomial")))
+
+ggplot(distributions, aes(x = random_value)) +
+  geom_histogram(binwidth = 0.5) + 
+  facet_wrap(~distribution, nrow = 4) +
+  theme_fivethirtyeight() + #from the "ggthemes" package
+  theme(panel.background = element_rect(fill = "white"),
+        plot.background = element_rect(fill = "white")) +
+  labs(x = "", y = "") 
+```
+
+The negative binomial distribution is an average of many different Poisson distributions with different means. We have a much greater variance than we expect given the overall mean, and so it gets very flat!
+
+
+### Example exercise 2: firefly watching
+
+![Light pollution and fireflies ](/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab8/images/lightpollution&fireflies.png)
+- The top three panels in the image above represent a likely scenario from several decades ago with a house with lights out, a clear view of the milky way, and fireflies in the forest. 
+- The bottom three panels in the image above represent the current scenario of a lit up home, the milky way faded from view, and the disappearance of fireflies.
+
+Research has shown that light pollution disrupts the fireflies' flash patterns, which are used for attracting mates. Firefly researchers such as Avalon Owens use special lights in the field (e.g., blue, red, amber) because these different color lights to not disturb the fireflies. 
+
+![ ](/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab8/images/lighttypes&fireflies.png)
+What if everyone used non-disruptive lights on homes and buildings as well? Avalon Owen's dissertation research at Tufts University investigated how different types of light affect firefly flash patterns. She conducted her work in Kelletville PA where there are so many fireflies that they hold an Annual Firefly Festival!
+
+Avalon set up replicates of four 2.5 x 10 m transects each composed of four subplots perpendicular to a the forest edge (fireflies live in the forest but spill out into fields) like this:
+
+![ ](/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab8/images/Experimentalsetup.png)
+Each transect was centered over a different colored light treatment (red, dark, blue, yellow), and light treatments were spaced 30 meters apart. The number firefly flashes per minute were recorded for each subplot
+
+In each subplot for each light treatment, Avalon recorded the number of firefly flashes per minute to determine if the number of flashes differed between subplots closer to the field vs closer to the forest, e.g., her data are plotted on with axes formatted like this:
+
+![ ](/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab8/images/Experimentalsetup2.png)
+
+Avalon's actual data look like this:
+
+![ ](/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab8/images/SubplotxtreatmentInteraction.png)
+
+Note that for the dark (control) treatment, there is a clear positive relationship between distance to forest (far to near represented by subplots A-D) and flashing probability.
+
+For the yellow and red treatments in particular, the probability of observing flashes as a function of distance does not follow such a clear positive relationship. The relationship between subplot (as a proxy for distance) and flashing probability is different depending on the light treatment, and the four light treatments do not all have parallel slopes. For some there is a positive slope from subplot A to B (dark treatment) while for others there is a negative slope subplot from A to B (yellow treatment).
+
+Read in firefly data:
+```{r firefly data}
+fireflies <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week8_Oct9/data/fireflies_full.csv") %>% # not the same dataset as the one we were previously using
+  mutate(treatment = factor(treatment, levels = c("D","B","A","R")))
+
+fireflies #there are a lot of zeros! But there are actually fireflies so they're not true zeros...
+```
+
+Do these data follow a Poisson distribution?
+```{r firefly data visualization}
+p1 <- ggplot(fireflies, aes(x = no_carolinus, fill = treatment)) + 
+      geom_histogram(binwidth = 1, position = "dodge") + 
+      scale_x_continuous(breaks = c(0,1,2,3,4,5,6,7,8,9,10))+
+      scale_fill_manual(name = "", 
+                        values = c("black","dodgerblue","darkorange1","firebrick2"),
+                        labels = c("dark", "blue", "amber", "red                ")) +
+      theme_bw() + labs(x = "")
+
+p2 <- ggplot(fireflies, aes(x = no_carolinus, fill = section_ID)) + 
+      geom_histogram(binwidth = 1, position = "dodge") + #facet_wrap(~section_ID) +
+      scale_x_continuous(breaks = c(0,1,2,3,4,5,6,7,8,9,10))+
+      scale_fill_manual(name = "", 
+                        values = c("gray25","gray75","gray50","black"),
+                        labels = c("next to path", 
+                                   "beneath light", 
+                                   "behind light", 
+                                   "next to forest")) +
+      theme_bw() + labs(x = "Photinus carolinus flash patterns")
+
+grid.arrange(p1, p2, ncol = 1, widths = 5) # put multiple plots together
+#p1 colored by treatment
+#p2 colored by location relative to forest vs field path
+```
+
+Are these data Poisson distributed? Let's randomly generate expected values from a Poisson distribution with a mean equal to the actual data 
+```{r}
+liarflies <- tibble(poisson = rpois(n = length(fireflies$no_carolinus), 
+                                    lambda = mean(fireflies$no_carolinus)),
+                    treatment = rep(c("D","B","A","R"), 
+                                    length.out = length(poisson))) %>%
+    mutate(treatment = factor(treatment, levels = c("D","B","A","R")))
+
+simfly<-ggplot(liarflies, aes(x = poisson, fill = treatment)) + 
+  geom_histogram(binwidth = 1, position = "dodge") + 
+  scale_x_continuous(breaks = c(0,1,2,3,4,5,6,7,8,9,10))+
+  scale_fill_manual(name = "", 
+                    values = c("black","dodgerblue","darkorange1","firebrick2"),
+                    labels = c("dark", "blue", "amber", "red")) +
+  theme_bw() + labs(x = "Poisson-distributed random values")
+
+simfly
+p1
+p2
+
+# Recall, expectation of Poisson distribution is that mean = variance
+#Mean vs variance in raw data
+var(fireflies$no_carolinus)
+mean(fireflies$no_carolinus)
+var(fireflies$no_carolinus)/mean(fireflies$no_carolinus)
+
+#Mean vs variance in data simulated from a Poisson distribution
+var(liarflies$poisson)
+mean(liarflies$poisson)
+var(liarflies$poisson)/mean(liarflies$poisson)
+```
+
+QUESTION 8: From the figures, how does the spread of the distribution of the actual data look relative to the the distribution of the simulated data?
+
+QUESTION 9: Are the variance and the mean roughly the same for the raw data? Are the variance and the mean roughly the same for the simulated data? 
+
+Let's fit some models!
+(1) Null model -- no effect of treatment 
+```{r in-depth investigation - null}
+f1 <- glm(no_carolinus ~ 1, family = "poisson", data = fireflies)
+
+deviance(f1) # model deviance should be about the same as residual degrees of freedom
+df.residual(f1) 
+deviance(f1)/df.residual(f1) # if > 3, data are overdispersed! If < 1, data are underdispersed (uncommon)
+```
+
+(2) Effect of treatment and distance from forest (section_ID), as well as their interaction (i.e., does the direction of the relationship between firefly flashing and light treatment differ among subplots OR does the direction of the relationship between firefly flashing and subplot differ among light treatments)
+```{r in-depth investigation - Effect of treatment x section ID}
+f2 <- glm(no_carolinus ~ section_ID*treatment, family = "poisson", data = fireflies)
+
+deviance(f2) # model deviance should be about the same as residual degrees of freedom
+df.residual(f2) 
+deviance(f2)/df.residual(f2)
+# if > 3, data are overdispersed! if < 1, data are underdispersed (uncommon)
+```
+
+Model (1) and (2) comparison
+```{r}
+ICtab(f1, f2)
+Anova(f2)
+#section_ID*treatment is the same as section_ID + treatment + section_ID:treatment
+```
+
+QUESTION 10: Does adding effects of light treatment and section ID account for some of the variation in the data?
+
+QUESTION 11: What do the results of the Anova() "marginal" hypothesis tests tell us about the effects of treatment, subplot location (section_ID) or their interaction?
+
+We might be satisfied with these results, but why not check some other distributions?!
+
+In general, there's not a huge penalty (likelihood-wise) for picking negative binomial over Poisson.
+
+Also, overdispersion tests say [next to] nothing about zero-inflation -- that's what visualizing the raw data via histograms is for!
+
+Below we test a series of models to explain the distribution of observations around the expected value, e.g., Poisson sampling variation, zero-inflation, or spatial heterogeneity (negative binomial):
+```{r model competition}
+f_pois <- glm(no_carolinus ~ section_ID*treatment, 
+              family = poisson, data = fireflies)
+f_nbin <- glm.nb(no_carolinus ~ section_ID*treatment, 
+                 data = fireflies)
+f_ZIP <- zeroinfl(no_carolinus ~ section_ID*treatment,  # | section_ID*treatment
+                  dist = "poisson", data = fireflies)
+f_ZINB <- zeroinfl(no_carolinus ~ section_ID*treatment, # | section_ID*treatment
+                   dist = "negbin", data = fireflies)
+
+ICtab(f_pois, f_nbin, f_ZIP, f_ZINB, base = T, weights = T)
+
+#Negative binomial is the "best" model, but with a zero-inflated model, if we don't use the "|" in the model syntax, we are actually testing for an effect of section_ID*treatment on both the count and the zero-inflation parts of the model, i.e., ~ section_ID*treatment | section_ID*treatment
+#Is that really the best model? Let's check:
+
+#Since the negative binomial is the best model from above, test for treatment effects
+ZINB_1 <- zeroinfl(no_carolinus ~ section_ID*treatment | 1,
+                   dist = "negbin", data = fireflies)
+ZINB_2 <- zeroinfl(no_carolinus ~ section_ID*treatment | section_ID,
+                   dist = "negbin", data = fireflies)
+ZINB_3 <- zeroinfl(no_carolinus ~ section_ID*treatment | treatment,
+                   dist = "negbin", data = fireflies)
+ZINB_4 <- zeroinfl(no_carolinus ~ section_ID*treatment | section_ID*treatment,
+                   dist = "negbin", data = fireflies)
+
+ICtab(ZINB_1, ZINB_2, ZINB_3, ZINB_4, base = T, weights = T)
+
+#Based on the best model for treatment effects in the ZiNB model above, re-compete the original models using the latter syntax for the zero-inflation models
+f_pois <- glm(no_carolinus~section_ID*treatment, 
+              family = "poisson", data = fireflies)
+f_nbin <- glm.nb(no_carolinus~section_ID*treatment, 
+                 data = fireflies)
+f_ZIP <- zeroinfl(no_carolinus ~ section_ID*treatment | treatment, 
+                  dist = "poisson", data = fireflies)
+f_ZINB <- zeroinfl(no_carolinus ~ section_ID*treatment | treatment, 
+                   dist = "negbin", data = fireflies)
+
+ICtab(f_pois, f_nbin, f_ZIP, f_ZINB, base = T, weights = T)
+
+#In the above example, we use AIC to find the model with the subset of predictors that fits the data best. We can now use marginal tests to get the p-values for the fixed effects (predictor variables).
+#(We could also do the above using AIC but it's rather cumbersome!)
+
+#Use marginal hypothesis test to test for significance of the predictors
+Anova(f_ZINB)
+
+#Compare to a marginal hypothsis test for the orginal Poisson GLM
+Anova(f_pois)
+
+```
+
+QUESTION 12:
+How do the p-values of the marginal test on the original Poisson GLM differ from the p-values in our final "best" model? What is your best (most educated) guess about why the differ in the way they do? Do you trust the p-values for both models? Why or why not?
+
+EXAMPLE SUMMARY STATEMENT:
+Try it! (Not graded)
+
+
+### Your lab exercise: Bee censuses in response to heat treatments
+
+In this experiment, former Tufts University graduate student Isaac Weinberg took eight two-frame honey bee observation hives, and subjected subsections of each hive to heat stress for 11 weeks. For each hive he heated either the top or bottom frame, and counted the comb contents once per week. He also counted comb contents in an approximately equally sized area (area_cm2) on the frame that was not heated. In general, bottom frames tend to contain more brood, and top frames tend to contain more food stores.
+
+```{r data wrangling}
+bees <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2024/Labs/Week8_Oct9/data/honey_bees.csv") %>%
+  mutate(hive_ID = as.factor(hive_ID)) # this is a category, not a continuous predictor
+
+bees
+
+```
+
+Make at least one histogram that visualizes the distribution of brood counts in this dataset.
+
+QUESTION 13: Do Isaac's data follow a Poisson distribution? Are they zero-inflated? Justify your answers with reference to the histogram and raw data summary statistics (e.g., means and variances).
+
+```{r QUESTION 13}
+### YOUR
+### CODE
+### GOES
+### HERE
+```
+
+Use ICtab() followed by Anova() on a series of (not zero-inflated) Poisson models without interactions to find the predictor(s) that best explain Isaac's data. ACCOUNT FOR DIFFERENCES IN SEARCH AREA.
+
+QUESTION 14: Which of the predictors significantly improve model fit?
+
+```{r QUESTION 14}
+### YOUR
+### CODE
+### GOES
+### HERE
+```
+
+Did we address the overdispersion in these data by including effects of certain parameters? Check the `m1$deviance` and `m1$df.residual` on each of your Poisson models to see if this is so.
+
+QUESTION 15: Which model has the "best" ratio of deviance to residual degrees of freedom? 
+
+QUESTION 16: Are bee brood counts still overdispersed in the winning model? How do you know?
+
+```{r QUESTIONS 15 & 16}
+### YOUR
+### CODE
+### GOES
+### HERE
+```
+
+Oops, Isaac forgot to include a column in his datasheet! He rather thoughtfully kept track of the color of socks that he was wearing when he collected data from his hives. Add the rAnDOmLy generated socks predictor to your winning model from before, and see if it significantly improves model fit. 
+
+QUESTION 17: Does graduate student sock morphology predict the number of brood cells in these observation hives? Report both dAIC and Anova() p-values. 
+
+```{r QUESTION 17}
+set.seed(50125) # this line makes it so you all will generate the same (random) sequence of data
+bees_complete <- bees %>%
+  mutate(socks = sample(c("striped","houndstooth","white","black",  # Isaac owns many nice socks!
+                          "vaporwave","hearts","argyle","paisley"), # at least eight pairs, in fact
+                        size = length(date), # one sock color per row (I guess he changes socks a lot)
+                        replace = T)) # sampling with replacement assuming Isaac washes his socks often
+bees_complete
+
+### YOUR
+### CODE
+### GOES
+### HERE
+```
+
+If these data are *actually* zero-inflated and/or negatively binomially distributed, these p-values could be misleadingly low (oh no)! Use ICtab() followed by Anova() on set of ZERO-INFLATED Poisson and negative binomial regressions (still without interactions), with a single predictor for the binomial (zero-inflation) part of the model, to keep it simple...
+
+Each should include one of these: "|" to distinguish: [count] | [binomial] <- predictors
+
+QUESTION 18: Which model best explains Isaac's data? Do socks still significantly improve model fit?
+
+```{r QUESTION 18}
+# BTW offsets in glm.nb() are written differently: glm.nb(y ~ x + offset(log(z)), data = data)
+# but you don't actually have to use glm.nb() for this question (it doesn't fit zero-inflated models)
+# also keep the same count predictors that you used in the model above
+# we are mostly using ICtab() to compete distributions, not predictors
+
+### YOUR
+### CODE
+### GOES
+### HERE
+```
+
+QUESTION 19: Compete the winning model from QUESTION 17 with that from QUESTION 18, and use the information from the model that wins *this* final competition to write a summary statement explaining the results of Isaac's experiment, with reference to the statistical test used and the p-values resulting.
+
+```{r QUESTION 19}
+### YOUR
+### CODE
+### GOES
+### HERE
+```
+
+YOUR SUMMARY STATEMENT:
+Enter text here
+

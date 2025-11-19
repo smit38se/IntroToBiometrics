@@ -1,0 +1,288 @@
+---
+title: "Lab 10 - Pick a model, Part I"
+author: "Lee Brown"
+date: "2025-11-03"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r libraries, message = F}
+library(tidyverse)
+library(lmtest)
+library(bbmle)
+library(pscl)
+library(MASS)
+library(car)
+library(pscl)
+
+library(conflicted)
+conflict_prefer("select","dplyr")
+conflict_prefer("filter","dplyr")
+conflict_prefer("summarize","dplyr")
+``` 
+
+#### Choose the most appropriate model to answer the questions below. 
+
+### 1.	You have been placed on an advisory board tasked with analyzing data on wildlife that could be affected by expansion of the border wall. Mexican black bears (Ursus americanus eremicus) inhabit a network of montane woodlands in Big Bend National Park, Texas, and into the Chihuahan Desert of Mexico. Because they can only inhabit the mountains above ~1000 meters in elevation, they effectively exist as a metapopulation among mountain islands in a sea of desert. Dispersal among populations could be disrupted by a border wall, and the remaining populations in both the US and Mexico may be too small to persist. Staff at Big Bend National Park monitor the bear populations by keeping records on the number of reported sightings of black bears, especially females with cubs. The table below shows the number of sightings of black bears among three montane islands. (Data modified from Hellgren et al. 2005, Biological Conservation 122: 131-140.)
+
+### a.	Find the MLE proportion of sightings of female bears with cubs by mountain range. Report these rates and their confidence intervals.
+
+#### 1a.
+#### Chinati Mts   0.4714286 (0.3571095 - 0.5878058)
+#### Davis Mts     0.4736842 (0.3637109 - 0.5854061)
+#### Glass Mts     0.4025974 (0.2975796 - 0.5139987)
+
+```{r question 1a, message = F, results = F, warning = F}
+bears<-read.csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab10_GLMMs&PickAModelPartI/PickAModel/bears.csv")
+
+summary(bears)
+
+#### 1a ####
+# The question asks about the "proportion" of sightings, so the value will range from 0-1; we should use a binomial model
+
+# In this case an identity link model works, but it doesn't always! FYI, my default is always to use the default log-link and the backtransform to get the means and CIs
+
+bmod3 <- glm(cbind(Female.sightings,Sightings.Total-Female.sightings)~-1+Mountain,family=binomial(link="identity"),data=bears)
+coef(bmod3)
+confint(bmod3)
+
+#Chinati Mts   0.4714286 (0.3571095 - 0.5878058)
+#Davis Mts     0.4736842 (0.3637109 - 0.5854061)
+#Glass Mts     0.4025974 (0.2975796 - 0.5139987)
+
+# OR
+# same answer from model below, backtransforming coefficients
+bmod3a <- glm(cbind(Female.sightings,Sightings.Total-Female.sightings)~-1+Mountain,family=binomial,data=bears)
+plogis(coef(bmod3a))
+plogis(confint(bmod3a))
+```
+
+### b.	Does the number of bears with cubs differs by mountain range and has there been a linear trend in numbers over time? Report your conclusion supported by statistics.
+
+#### 1b.
+#### I would run this as POISSON since the question asked about the "number of bears with cubs". 
+
+#### - No, the proportion of sightings of female bears does not differ by mountain range (Chisq = 1.0037, df = 2, p = 0.6054).
+
+#### - Yes, there has been a linear trend in the number of females sighted over time (Chisq = 24.907, df = 1, p = 6.016e-07).
+
+#### **** If you ran this as a BINOMIAL (following 1a above):
+
+#### - No, the proportion of sightings of female bears does not differ by mountain range (Chisq = 1.0037, df = 2, p = 0.6054). We can also see this in our plot above because the means for each mountain range overlap with the CIs for the others.
+
+#### - No, there has not been a linear trend in the number of females sighted over time (Chisq = 1.4851, df = 1, p = 0.223).
+
+```{r question 1b, message = F, results = F, warning = F}
+#### 2b Does the number of bears with cubs differs by mountain range
+bmod3a2<-glm(Female.sightings~Mountain,family=poisson,data=bears)
+
+Anova(bmod3a2)
+#         LR Chisq Df Pr(>Chisq)
+#Mountain  0.37849  2     0.8276
+
+#### 2b Has there been a yearly trend in the number of sightings over time?
+# check that year is a numeric variable in the data
+class(bears$Year)
+#or
+summary(bears) # Year has a Mean, Median, etc, so it is being treated as a number rather than category
+
+bmod4.2<-glm(Female.sightings~Year,family=poisson,data=bears)
+summary(bmod4.2)
+#             Estimate Std. Error z value Pr(>|z|)    
+#(Intercept) 468.32931   97.61428   4.798  1.6e-06 ***
+#Year         -0.23329    0.04886  -4.775  1.8e-06 ***
+
+Anova(bmod4.2)
+#        Chisq Df Pr(>Chisq)    
+#Year   24.907  1  6.016e-07 ***
+
+# Remember to check for overdispersion!!!!!!!!!!
+bmod4.2$deviance/bmod4.2$df.residual # < 3, Phew! I don't have to run other models, simple Poisson variance is enough!
+```
+
+### 2.	A border wall would separate the already dwindling northern and southern populations of the Mexican gray wolf, Canis lupus subsp. baileyi. There are less than 250 Mexican gray wolves remaining in the wild (though this number has been increasing with reintroduction efforts). These populations rely on relatively large ranges across which to search for prey, which include elk, cattle, deer, squirrels, rabbits, and other rodents. Ranchers often blame wolves for destroying cattle, but a surprisingly small proportion of their diet consists of cattle, with the majority being elk. The table below shows the number of scat (poop!) samples for which elk versus other prey items were predominant among three wolf packs in Arizona and New Mexico from 2005 to 2006. (Data modified from Merkle et al. 2009, The Southwestern Naturalist 54: 480-524.)
+
+### a. Based on the limited dataset above, what proportion of scat samples did not consist predominantly of elk?
+
+#### 2a.
+#### The proportion of wolf scat samples that consisted of "other", i.e., not elk, was 0.1928251 (0.1447222 - 0.2479530)
+
+```{r question 2a, message = F, results = F, warning = F}
+wolves<-read.csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab10_GLMMs&PickAModelPartI/PickAModel/wolves.csv")
+
+wmod1<-glm(cbind(Other,Elk)~1,family=binomial,data=wolves)
+plogis(coef(wmod1)) #0.1928251
+plogis(confint(wmod1)) #0.1447222 0.2479530
+
+# In this case, identity link works, but don't count on it!
+wmod<-glm(cbind(Other,Elk)~1,family=binomial(link="identity"),data=wolves)
+coef(wmod) #0.1928251
+confint(wmod)
+
+# Same answer using definition of MLE from a binomial distribution!
+sum(wolves$Other)/sum((wolves$Elk+wolves$Other))
+#43/223 = 0.1928251
+
+```
+
+### 3.	You’ve been contracted by the CDC to assess the potential for Lyme disease to be spread by avian hosts of ticks that often carry Lyme disease. Prior to collecting your own data, you’ve decided to look at previously published datasets to help design your study. Among these, Newman et al. studied the role of birds in northern California as hosts for Ixodes pacificus to try to understand if these birds might be potential reservoirs of Lyme disease (2015, PLoS ONE 10(2):e0118146). The file “LymeBirds.csv” contains the number of ticks removed from 623 birds, representing 53 species and 24 families.
+
+### a.	What is the mean number of ticks found per bird (and confidence intervals around this mean)? To answer this question, compare at least three models that you think could potentially describe the distribution of ticks found on birds in the dataset.
+
+#### 3a.
+#### A zero-inflated negative binomial best predicted the number of ticks found on birds (Table 1). On average, 0.4558611 were found on birds (CI: 0.3454984 - 0.601477).
+
+#### negative binomial: AIC = 870.3, dAIC = 0.0, df = 2, weight = 0.73
+#### 0-inflated negative binomial: AIC = 872.3, dAIC = 2.0, df = 3, weight = 0.27
+#### 0-inflated Poisson: AIC = 1311.7, dAIC = 441.4, df = 2, weight = <0.0001
+#### Poisson: AIC = 1813.3, dAIC = 942.9, df = 1, weight = <0.001
+
+```{r question 3a, message = F, results = F, warning = F}
+birds<-read.csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab10_GLMMs&PickAModelPartI/PickAModel/LymeBirds.csv")
+birds
+
+#### 3a ####
+#Poisson
+b0<-glm(N_TICK~1,family=poisson,data=birds)
+exp(coef(b0)) # 0.4558587 = mean number of ticks
+
+b0$deviance/b0$df.residual # < 3 so maybe okay, but we should still look at other models!!
+
+#zero-inflated Poisson
+b1<-zeroinfl(N_TICK~1,data=birds)
+exp(coef(b1)[1]) #2.636664 = mean number of ticks
+plogis(coef(b1)[2]) #0.8271089 = proportion of true 0s
+
+#zero-inflated negative binomial
+b2<-zeroinfl(N_TICK~1, dist="negbin",data=birds)
+exp(coef(b2)[1]) #0.4559173 = mean number of ticks
+plogis(coef(b2)[2]) #0.0001222133 = proportion of true 0s
+# Note that the proportion of true 0s essentially equals ZERO!!!
+
+#negative binomial
+b3<-glm.nb(N_TICK~1, data=birds)
+exp(coef(b3)) #0.4558587 = mean number of ticks
+
+ICtab(b0,b1,b2,b3,base=T, weights = T)
+#    AIC    dAIC   df weight
+#b3  870.3    0.0 2  0.73  
+#b2  872.3    2.0 3  0.27  
+#b1 1311.7  441.4 2  <0.001
+#b0 1813.3  942.9 1  <0.001
+
+# Note that the AIC difference between the negative binomial and 0-inflated binomial is 2, i.e., the 0-inflated negative binomial is being penalized by exactly 2 (the AIC penalty for each additional parameter) for the extra parameter estimating the proportion of true 0s.
+
+#0-inflated negative binomial
+exp(coef(b2))
+exp(confint(b2))
+# Mean ticks per bird:
+# 0.4559173 (0.3454639 - 0.6016854)
+
+#negative binomial
+exp(coef(b3))
+exp(confint(b3))
+# Mean ticks per bird:
+# 0.4558587 (0.3482073 - 0.6068077)
+```
+
+### b.	Using the best model from a above, evaluate if there is an effect of the main habitat in which birds are found (HABITAT) on the number of ticks and use statistics to defend your results.
+
+#### 3b.
+#### Yes, there is an effect of habitat on the number of ticks found on birds (Chisq = 35.57, df = 4, p < 0.0001).
+
+```{r question 4b, message = F, results = F, warning = F}
+b3hab1<-glm.nb(N_TICK~1, data=birds)
+b3hab<-glm.nb(N_TICK~HABITAT, data=birds)
+Anova(b3hab)
+#         LR Chisq Df Pr(>Chisq)    
+# HABITAT   91.555  4  < 2.2e-16 ***
+
+# If you didn't run the negative binomial model, you would test for an effect of habitat on the count term in a 0-inflated model using the "HABITAT|1" formula (habitat affects the count but not the 0-inflation part of the model)
+b3b<-zeroinfl(N_TICK~HABITAT|1, dist="negbin",data=birds)
+Anova(b3b)
+#        Df  Chisq Pr(>Chisq)    
+#HABITAT  4  114.94  < 2.2e-16 ***
+```
+
+### c.	Is there an effect of habitat or species on whether or not individual birds test positive for Lyme disease? Support your conclusion with statistics.
+
+#### 3c.
+#### No, there isn't a significant effect of either in the "full" model, nor in models with each as the only predictor
+
+#### Further, using AIC, the null (intercept-only) model with a single estimate for the infection rate across all species and habitats is the best model
+
+```{r question 3c, message = F, results = F, warning = F}
+
+b4 <- glm(POS_BIRD~HABITAT + SCI_NAME,family = binomial,data = birds)
+Anova(b4)
+#         LR Chisq Df Pr(>Chisq)
+#HABITAT    -0.029  1     1.0000
+#SCI_NAME   47.951 49     0.5156
+
+
+# Or compare via AIC to see if a model with both either variables affect whether or not the AIC -- which is the best model?
+
+b4a<-glm(POS_BIRD~HABITAT,family = binomial,data = birds)
+Anova(b4a)
+#        LR Chisq Df Pr(>Chisq)
+#HABITAT   5.0707  4     0.2801
+
+b4b<-glm(POS_BIRD~SCI_NAME,family = binomial,data = birds)
+Anova(b4b)
+#         LR Chisq Df Pr(>Chisq)
+#SCI_NAME   53.051 52     0.4334
+
+b4null<-glm(POS_BIRD~1, family = binomial, data = birds)
+
+ICtab(b4,b4a,b4b, b4null,base=T,weights = T) 
+#   AIC   dAIC  df weight
+# b4null 423.1   0.0 1  0.81  
+# b4a    426.0   2.9 5  0.19  
+# b4b    474.0  50.9 53 <0.001
+# b4     476.1  53.0 54 <0.001
+
+# No significant effect of habitat or species using marginal likelihood test via Anova()
+
+# Model with a single estimate for the infection rate is the best model using AIC, although it's not that much better than a model with habitat as a predictor based on AIC, but it is still the best model!
+```
+
+### 4.	Flowering plant species contain different amounts of nectar per flower, and different concentrations of sugar in the nectar, which can affect the survival and reproduction of insects that feed on these flowers. You’ve been asked to help Shenandoah National Park choose pollinator-friendly plant species that will have the greatest chance of supporting local butterflies and other pollinators. To get started on this task, take a look at data collected Tufts REU students in 2018 on the sugar concentration of flowers of several species. Sugar concentrations have been log-transformed for easier analysis [using the formula log(conc + 0.5)]. (Data from me.)
+
+### a.	What is the mean log-sugar concentration per species? Which two species have the highest concentration of sugar per flower? (Note: It may be helpful to back-transform the mean estimates and confidence intervals). 
+
+#### 4a.
+#### Asclepias syriaca and Vicia cracca have the highest mean concentration per flower
+#### Asclepias syriaca: 74.3490577 (37.4428603 - 147.632481)
+#### Vicia cracca: 41.3493354 (21.2824613 - 80.336927)
+
+### b.	Is there a difference between native and non-native species in sugar concentration per flower? Support your answer with statistics and provide means and confidence intervals for both.
+
+#### 4b.
+#### Yes there is difference between native and non-native species in sugar concentration per flower, with natives having lower overall nectar (F = 10.18, df = 1, p = 0.002).
+
+```{r question 4a & b, message = F, results = F, warning = F}
+necdat<-read.csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab10_GLMMs&PickAModelPartI/PickAModel/nectar.csv")
+
+# 4a 
+f1<-glm(logcon~-1+species,data=necdat)
+exp(coef(f1)) 
+exp(confint(f1))
+
+
+# 4b 
+f02<-lm(logcon~native,data=necdat)
+summary(f02)
+Anova(f02)
+#          Sum Sq  Df F value   Pr(>F)   
+#native     43.57   1  10.179 0.001632 **
+#Residuals 924.54 216 
+
+# OR
+f02b<-glm(logcon~native, family = gaussian,data=necdat)
+summary(f02b)
+Anova(f02b)
+# native   10.179  1   0.001421 **
+```
+

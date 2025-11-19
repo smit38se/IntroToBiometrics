@@ -1,0 +1,149 @@
+---
+title: "BIO456/BIO526 Loops Lab solution"
+date: "11 Sept 2024"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+```
+
+Loops lab assignment
+```{r review}
+orchids <- read_csv("/Users/brown8lm/Dropbox/JMU/courses/BIO456_EcologicalModels&Data/Fall2025/Labs/Lab3_functionsLoops/orchid.seedlings.csv")
+
+#dbinom(x = orchids$seedlings.0, size = orchids$seeds.m1, prob = 0.05, log = T) %>% sum()
+```
+
+```{r}
+# write code to calculate the log-likelihood of the whole data set 
+# given a range of 1) lags and 2) probabilities of seeds becoming seedlings!
+# I've made the tibble for you, you've just got to fill it in ;)
+# THEN try plotting the output given the code provided below
+
+orchids_pt2 <- tibble(probs = seq(0.01, 0.99, by = 0.01),
+                      lag_1y = 0, # having these as NA
+                      lag_2y = 0, # caused some problems
+                      lag_3y = 0, # for some but not all ppl
+                      lag_4y = 0) # depending on your code
+
+number_of_cols <- length(orchids_pt2)       # 5
+# == ncol(orchids_pt2)
+number_of_rows <- length(orchids_pt2$probs) # 99
+# == nrow(orchids_pt2)
+```
+
+## OPTION 1
+```{r}
+for(i in 1:number_of_rows){
+  orchids_pt2$lag_1y[i] <- dbinom(x = orchids$seedlings.0, 
+                                  size = orchids$seeds.m1, 
+                                  prob = orchids_pt2$probs[i], 
+                                  log = TRUE) %>% sum()
+  
+  orchids_pt2$lag_2y[i] = dbinom(x = orchids$seedlings.0, 
+                                 size = orchids$seeds.m2, 
+                                 prob = orchids_pt2$probs[i], 
+                                 log = TRUE) %>% sum()
+  
+  orchids_pt2$lag_3y[i] = dbinom(x = orchids$seedlings.0, 
+                                 size = orchids$seeds.m3, 
+                                 prob = orchids_pt2$probs[i], 
+                                 log = TRUE) %>% sum()
+  
+  orchids_pt2$lag_4y[i] = dbinom(x = orchids$seedlings.0, 
+                                 size = orchids$seeds.m4, 
+                                 prob = orchids_pt2$probs[i], 
+                                 log = TRUE) %>% sum()
+}
+
+
+max(orchids_pt2$lag_1y) # log-likelihood at MLE, as calculated w/ a loop
+index <- which.max(orchids_pt2$lag_1y) # row number in which you find MLE
+orchids_pt2$probs[index] # MLE, i.e. probability that maximizes log-likelihood
+```
+
+## OPTION 2
+```{r}
+orchids_pt2 <- tibble(probs = seq(0.01, 0.99, by = 0.01),
+                      lag_1y = 0, # having these as NA
+                      lag_2y = 0, # caused some problems
+                      lag_3y = 0, # for some but not all ppl
+                      lag_4y = 0) # depending on your code
+
+
+for(j in 1:4){
+  for(i in 1:number_of_rows){
+    orchids_pt2[i,j+1] = dbinom(x = orchids$seedlings.0, 
+                                size = orchids[,j+3,drop=T], # drop=T turns 18x1 tibble into vector
+                                prob = orchids_pt2$probs[i], 
+                                log = TRUE) %>% sum()
+    }
+} 
+
+max(orchids_pt2$lag_1y) # log-likelihood at MLE, as calculated w/ a loop
+index <- which.max(orchids_pt2$lag_1y) # row number in which you find MLE
+orchids_pt2$probs[index] # MLE, i.e. probability that maximizes log-likelihood
+```
+
+## OPTION 3
+```{r}
+orchids_pt2 <- tibble(probs = seq(0.01, 0.99, by = 0.01),
+                      lag_1y = 0, # having these as NA
+                      lag_2y = 0, # caused some problems
+                      lag_3y = 0, # for some but not all ppl
+                      lag_4y = 0) # depending on your code
+
+for(i in 1:number_of_rows){
+  for(j in 4:7){
+    orchids_pt2[i,j-2] = dbinom(x = orchids$seedlings.0, 
+                                size = orchids[,j,drop=T], # drop=T turns 18x1 tibble into vector
+                                prob = orchids_pt2$probs[i], 
+                                log = TRUE) %>% sum()
+    }
+} 
+
+max(orchids_pt2$lag_1y) # log-likelihood at MLE, as calculated w/ a loop
+index <- which.max(orchids_pt2$lag_1y) # row number in which you find MLE
+orchids_pt2$probs[index] # MLE, i.e. probability that maximizes log-likelihood
+```
+
+## PLOT LIKELIHOOD PROFILE FOR EACH LAG MODEL
+```{r}
+orchids_tidy <- orchids_pt2 %>% 
+  pivot_longer(c(lag_1y,lag_2y,lag_3y,lag_4y), 
+               names_to = "population",  
+               values_to = "log.likelihood")
+
+ggplot(orchids_tidy, aes(x = probs, y = log.likelihood, color = population)) + 
+  geom_line() + labs(x = "probability", y = "log-likelihood") + theme_classic(base_size = 14) 
+```
+
+```{r}
+ggplot(orchids_tidy, aes(x = probs, y = exp(log.likelihood), color = population)) + 
+  geom_line() + labs(x = "probability", y = "likelihood") + theme_bw() # suggests 1y most likely
+```
+
+## CHECK RESULT USING A GLM
+```{r}
+orchids$response <- cbind(orchids$seedlings.0, orchids$seeds.m1 - orchids$seedlings.0)
+m1 <- glm(response ~ 1, family = binomial(link = "identity"), data = orchids) 
+logLik(m1) # log-likelihood evaluated at MLE
+coef(m1) # MLE of the coefficient (i.e. probability)
+# why don't they match perfectly? 
+# (hint: add '+ ylim(-300,-100)' to the the log-likelihood ggplot above)
+```
+
+## Zoom into the part of the above plotted curve the represents the maximum
+```{r}
+ggplot(orchids_tidy, aes(x = probs, y = log.likelihood, color = population)) + 
+  geom_line() + labs(x = "probability", y = "log-likelihood") + theme_bw() + ylim(-300,-100)
+
+
+orchids_pt2$probs
+coef(m1)
+```
+
