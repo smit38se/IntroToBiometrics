@@ -1,0 +1,246 @@
+Pair_Quadrat,Minutes,PollinatorGroup,Count,FloweringUnits
+1_1,5,beetle,1,88
+1_1,5,bumble bee,1,88
+1_1,5,butterfly,1,88
+1_1,5,honey bee,1,88
+1_1,5,hover fly,2,88
+1_1,5,other bee,1,88
+1_1,5,wasp,1,88
+1_2,10,beetle,0,50
+1_2,10,bumble bee,0,50
+1_2,10,butterfly,2,50
+1_2,10,honey bee,1,50
+1_2,10,hover fly,2,50
+1_2,10,other bee,4,50
+1_2,10,wasp,1,50
+1_3,5,beetle,0,50
+1_3,5,bumble bee,0,50
+1_3,5,butterfly,0,50
+1_3,5,honey bee,0,50
+1_3,5,hover fly,1,50
+1_3,5,other bee,3,50
+1_3,5,wasp,0,50
+1_4,2,beetle,0,93
+1_4,2,bumble bee,0,93
+1_4,2,butterfly,1,93
+1_4,2,honey bee,1,93
+1_4,2,hover fly,1,93
+1_4,2,other bee,1,93
+1_4,2,wasp,0,93
+1_5,3,beetle,0,45
+1_5,3,bumble bee,0,45
+1_5,3,butterfly,0,45
+1_5,3,honey bee,0,45
+1_5,3,hover fly,0,45
+1_5,3,other bee,3,45
+1_5,3,wasp,0,45
+2_1,8,beetle,1,70
+2_1,8,bumble bee,1,70
+2_1,8,butterfly,7,70
+2_1,8,honey bee,2,70
+2_1,8,hover fly,0,70
+2_1,8,other bee,1,70
+2_1,8,wasp,2,70
+2_2,6,beetle,2,100
+2_2,6,bumble bee,3,100
+2_2,6,butterfly,0,100
+2_2,6,honey bee,0,100
+2_2,6,hover fly,0,100
+2_2,6,other bee,2,100
+2_2,6,wasp,1,100
+2_3,3,beetle,0,70
+2_3,3,bumble bee,1,70
+2_3,3,butterfly,7,70
+2_3,3,honey bee,0,70
+2_3,3,hover fly,0,70
+2_3,3,other bee,0,70
+2_3,3,wasp,0,70
+2_4,6,beetle,2,40
+2_4,6,bumble bee,0,40
+2_4,6,butterfly,6,40
+2_4,6,honey bee,0,40
+2_4,6,hover fly,0,40
+2_4,6,other bee,1,40
+2_4,6,wasp,0,40
+2_5,3,beetle,1,20
+2_5,3,bumble bee,0,20
+2_5,3,butterfly,0,20
+2_5,3,honey bee,0,20
+2_5,3,hover fly,0,20
+2_5,3,other bee,2,20
+2_5,3,wasp,2,20
+3_1,1,beetle,1,129
+3_1,1,bumble bee,0,129
+3_1,1,butterfly,0,129
+3_1,1,honey bee,0,129
+3_1,1,hover fly,0,129
+3_1,1,other bee,1,129
+3_1,1,wasp,0,129
+3_2,7,beetle,2,113
+3_2,7,bumble bee,3,113
+3_2,7,butterfly,2,113
+3_2,7,honey bee,1,113
+3_2,7,hover fly,0,113
+3_2,7,other bee,0,113
+3_2,7,wasp,0,113
+3_3,8,beetle,0,133
+3_3,8,bumble bee,1,133
+3_3,8,butterfly,4,133
+3_3,8,honey bee,2,133
+3_3,8,hover fly,0,133
+3_3,8,other bee,0,133
+3_3,8,wasp,0,133
+3_4,7,beetle,0,74
+3_4,7,bumble bee,0,74
+3_4,7,butterfly,1,74
+3_4,7,honey bee,0,74
+3_4,7,hover fly,0,74
+3_4,7,other bee,0,74
+3_4,7,wasp,3,74
+3_5,2,beetle,1,157
+3_5,2,bumble bee,0,157
+3_5,2,butterfly,1,157
+3_5,2,honey bee,2,157
+3_5,2,hover fly,0,157
+3_5,2,other bee,1,157
+3_5,2,wasp,0,157
+4_1,10,beetle,0,136
+4_1,10,bumble bee,2,136
+4_1,10,butterfly,3,136
+4_1,10,honey bee,0,136
+4_1,10,hover fly,1,136
+4_1,10,other bee,0,136
+4_1,10,wasp,0,136
+4_2,1,beetle,0,46
+4_2,1,bumble bee,0,46
+4_2,1,butterfly,1,46
+4_2,1,honey bee,0,46
+4_2,1,hover fly,0,46
+4_2,1,other bee,0,46
+4_2,1,wasp,0,46
+4_3,9,beetle,0,201
+4_3,9,bumble bee,2,201
+4_3,9,butterfly,1,201
+4_3,9,honey bee,0,201
+4_3,9,hover fly,8,201
+4_3,9,other bee,0,201
+4_3,9,wasp,1,201
+4_4,4,beetle,4,90
+4_4,4,bumble bee,0,90
+4_4,4,butterfly,0,90
+4_4,4,honey bee,0,90
+4_4,4,hover fly,2,90
+4_4,4,other bee,0,90
+4_4,4,wasp,0,90
+4_5,1,beetle,1,97
+4_5,1,bumble bee,1,97
+4_5,1,butterfly,0,97
+4_5,1,honey bee,0,97
+4_5,1,hover fly,0,97
+4_5,1,other bee,0,97
+4_5,1,wasp,1,97
+5_1,4,beetle,8,66
+5_1,4,bumble bee,0,66
+5_1,4,butterfly,0,66
+5_1,4,honey bee,0,66
+5_1,4,hover fly,1,66
+5_1,4,other bee,0,66
+5_1,4,wasp,0,66
+5_2,7,beetle,3,90
+5_2,7,bumble bee,3,90
+5_2,7,butterfly,3,90
+5_2,7,honey bee,3,90
+5_2,7,hover fly,3,90
+5_2,7,other bee,3,90
+5_2,7,wasp,3,90
+5_3,8,beetle,4,102
+5_3,8,bumble bee,0,102
+5_3,8,butterfly,0,102
+5_3,8,honey bee,0,102
+5_3,8,hover fly,6,102
+5_3,8,other bee,0,102
+5_3,8,wasp,0,102
+5_4,5,beetle,0,57
+5_4,5,bumble bee,0,57
+5_4,5,butterfly,0,57
+5_4,5,honey bee,1,57
+5_4,5,hover fly,0,57
+5_4,5,other bee,0,57
+5_4,5,wasp,0,57
+5_5,1,beetle,1,77
+5_5,1,bumble bee,0,77
+5_5,1,butterfly,0,77
+5_5,1,honey bee,1,77
+5_5,1,hover fly,0,77
+5_5,1,other bee,0,77
+5_5,1,wasp,1,77
+6_1,8,beetle,1,332
+6_1,8,bumble bee,4,332
+6_1,8,butterfly,4,332
+6_1,8,honey bee,0,332
+6_1,8,hover fly,0,332
+6_1,8,other bee,0,332
+6_1,8,wasp,3,332
+6_2,6,beetle,0,29
+6_2,6,bumble bee,0,29
+6_2,6,butterfly,2,29
+6_2,6,honey bee,0,29
+6_2,6,hover fly,4,29
+6_2,6,other bee,0,29
+6_2,6,wasp,3,29
+6_3,8,beetle,0,24
+6_3,8,bumble bee,1,24
+6_3,8,butterfly,1,24
+6_3,8,honey bee,0,24
+6_3,8,hover fly,1,24
+6_3,8,other bee,0,24
+6_3,8,wasp,0,24
+6_4,2,beetle,1,150
+6_4,2,bumble bee,15,150
+6_4,2,butterfly,2,150
+6_4,2,honey bee,2,150
+6_4,2,hover fly,3,150
+6_4,2,other bee,0,150
+6_4,2,wasp,1,150
+6_5,1,beetle,0,55
+6_5,1,bumble bee,1,55
+6_5,1,butterfly,2,55
+6_5,1,honey bee,1,55
+6_5,1,hover fly,3,55
+6_5,1,other bee,0,55
+6_5,1,wasp,0,55
+7_1,6,beetle,2,123
+7_1,6,bumble bee,0,123
+7_1,6,butterfly,0,123
+7_1,6,honey bee,0,123
+7_1,6,hover fly,0,123
+7_1,6,other bee,1,123
+7_1,6,wasp,4,123
+7_2,6,beetle,0,9
+7_2,6,bumble bee,0,9
+7_2,6,butterfly,0,9
+7_2,6,honey bee,0,9
+7_2,6,hover fly,0,9
+7_2,6,other bee,2,9
+7_2,6,wasp,2,9
+7_3,9,beetle,7,312
+7_3,9,bumble bee,0,312
+7_3,9,butterfly,5,312
+7_3,9,honey bee,0,312
+7_3,9,hover fly,0,312
+7_3,9,other bee,7,312
+7_3,9,wasp,1,312
+7_4,4,beetle,1,35
+7_4,4,bumble bee,0,35
+7_4,4,butterfly,0,35
+7_4,4,honey bee,1,35
+7_4,4,hover fly,0,35
+7_4,4,other bee,1,35
+7_4,4,wasp,0,35
+7_5,1,beetle,0,38
+7_5,1,bumble bee,1,38
+7_5,1,butterfly,0,38
+7_5,1,honey bee,0,38
+7_5,1,hover fly,0,38
+7_5,1,other bee,1,38
+7_5,1,wasp,0,38
